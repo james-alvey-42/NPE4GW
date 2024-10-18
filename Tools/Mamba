@@ -1,0 +1,21 @@
+MAMBA NOTES:
+Intro: Faster version of Conda, dependency resolution and parallel downloading - significantly speed up package installation and environment management 
+Install: Have installed. One method of doing so is:
+conda install mamba -n base -c conda-forge
+Look up for more info:
+https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html
+Basic Commands:
+- install: mamba install <package-name>
+- create environment: mamba create -n <env-name> <package-list>
+- activate environment: mamba activate <env-name>
+- deactivate environment: mamba deactivate
+- list installed environments: mamba env list
+- create environments from YAML files (?): mamba env create -f environment.yml
+- adding conda channels: mamba config --add channels <channel-name>
+- view active channels: mamba config --show channels
+- remove package: mamba remove <package-name>
+- update package: mamba update <package-name>
+- search package: mamba search <package-name>
+- repoquery search: mamba repoquery search <package-name>
+- repoquery dependencies: mamba repoquery depends <package-name>
+
