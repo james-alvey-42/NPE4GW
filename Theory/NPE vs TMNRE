@@ -1,8 +1,8 @@
-			Aspect												 						NPE																															TMNRE
-Estimation Type										Direct posterior estimation																	Likelihood-to-prior ratio estimation
+        Aspect								   NPE										TMNRE
+Estimation Type						       Direct posterior estimation						Likelihood-to-prior ratio estimation
 Efficiency					Less efficient in high dimensions, requires full posterior			More efficient due to truncation, focused simulation
-Learning Approach											Single-step training																			Multi-round, iterative refinement
-Amortization							Fully amortized inference for any new data											Not fully amortized, specific to observation
-Flexibility										General-purpose posterior estimation										Targeted marginal or parameter-specific posteriors
-Simulation Efficiency		Can be inefficient with large parameter spaces											More simulation-efficient due to truncation
-Applicability					Best for amortized inference across many observations					Best for high-dimensional or targeted parameter inference
+Learning Approach						  Single-step training							Multi-round, iterative refinement
+Amortization						Fully amortized inference for any new data				   Not fully amortized, specific to observation
+Flexibility						  General-purpose posterior estimation					Targeted marginal or parameter-specific posteriors
+Simulation Efficiency		                      Can be inefficient with large parameter spaces				    More simulation-efficient due to truncation
+Applicability					  Best for amortized inference across many observations			      Best for high-dimensional or targeted parameter inference
