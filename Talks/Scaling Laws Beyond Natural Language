@@ -1,0 +1,28 @@
+Training really large model is v expensive - millions of dollars expensive
+OpenAI did this with their GPTs - could predict the performance of GPT-4 with just 1% of the model
+Scaling laws - we can vary model size, dataset size, how long we train
+What doo we want - low loss, but also emergent behaviour that correlates 
+Autoregressively train decoder-only transformers on large corpus of text data, optimised on cross-entropy loss
+Loss is a power law in compute, data and number of parameters
+Larger models require fewer samples to reach the same performance 
+Architecture doesn't really matter
+'Big models may be more important than big data', 'We expect that larger language models will perform better and be more sample efficient than current models'
+
+Transformers: transformer(input) = p(output|input)
+Finish the sentence using context - GPT-4o is excellent at this
+How do transformers work? Tokenisation into numbers, encoding into vectors, position encoding - adding on vectors which encode the position of the token, attention blocks, distributional head to get probability distribution and then gives an output calculation of loss
+Attention mechanism:
+A single 'head; of attention: consists of keys (K), queries (Q) and values (V)
+Values (V): each embedded token assigned a value V by a (d_embed, d_embed) matrix W_v (typically low rank)
+Queries (Q): for a single head of attention, more of a question posed to a key
+Keys (K):
+Compute normalised attention "scores" (masked = auto-regressive) - as a dot product
+Update the inputs with values normalised by scores to get a new 'meaning' then miz these 'meanings' with a standard feedforward network
+
+Time series - they are also causal, we care a lot about forecasting, amenable to transformer architectures - wanted to find scaling laws in large time series models
+O(10) billion
+Change - no tokenisation scheme, Gaussian log-likelihood loss 
+Broadly speaking similar power laws 
+
+Applications in Astro? Early detection, event forecasting?
+Design choices, optimal computational requirements?
