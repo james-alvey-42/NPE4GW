@@ -1,0 +1,8 @@
+Analytic likelihood functions, not simulation based inference
+Train neural network emulators to put in inference loops
+Accuracy usually done with RMSE, rule of thumb followed for RMSE average value, usually 0.1sigma
+What we are actually interested in is recovery of the posterior if we use an emulator rather than the full simulation
+Comparing recovered posteriors with ARES code and then the emulator with ARES
+Emulator bias - difference in means between global emulator and ARES; true bias is difference in means between ARES and true value
+Even with 0.05sigma RMSE, can't accurately recover posterior with globalemu
+Kullback-Leibler Divergence- assume model is linear, linear emulator error, gaussian likelihood etc.
