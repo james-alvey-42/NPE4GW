@@ -1,0 +1,14 @@
+Lucas Makinen - Imperial
+
+Explicit likelihood requires knowing p(x given theta), implicit is where you can use forward simulation
+Vary parameters, accept the simulations that 'look like' desired, form distribution - approximate Bayesian simulation
+ILI - Implicit Likelihood Inference
+Compression - constraints on model parameters
+Fisher Information - optimisation loss function
+Cramer-Rao bound
+IMNM - Information Maximising Neural Networks:
+Params -> Data -> Summaries
+Angular Cl's?
+Mutual information maximisation iff posterior entropy maximisation
+Learn hybrid statistic, posterior estimation
+Hybrid statistic degrades much slower with decreasing simulation data than full network
