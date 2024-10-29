@@ -1,0 +1,13 @@
+Millihertz GW
+3 spacecraft, 1 au heliocentric orbits, construction begins next year, launch expected 2035
+LIGO - Michelson interferometer
+LISA - fire lasers at each other, time-delay interferometry
+Not just long wavelength - need a more complicated formula, becomes integral
+Double white dwarfs - most numerous sources
+Confusion noise foreground - either signal of galactic DWD population, or noise over GW waves
+Supermassive BHs - short transient blips, very loud
+Multiband BHs - stellar mass BHs, LISA sees early inspiral
+Extreme Mass Ratio Inspirals - most challenging from a data analysis perspective
+
+Global Fit - all signals, all noises and glitches, in a single Bayesian inference
+Blocked Gibbs Sampling - type of MCMC - keep most parameters fixed while the others are updated - divide and conquer approach
