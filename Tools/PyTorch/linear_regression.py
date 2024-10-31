@@ -52,10 +52,18 @@ class LinearRegressionModel(pl.LightningModule):
         # Set up an optimizer
         optimizer = torch.optim.SGD(self.parameters(), lr=0.01)
         return optimizer
+    
+    # def on_epoch_end(self):
+    #     # Make predictions on validation data
+    #     self.eval()
+    #     with torch.no_grad():
+    #         y_pred = self(self.x_range)
+    #         self.predictions_over_time.append(y_pred.cpu().numpy())  # Store predictions
+    #     self.train()
 # Generate data
 torch.manual_seed(42)  # For reproducibility
 x = torch.randn(1000, 1)  # 1000 samples, 1 feature
-y = 7.4 * x + 5 + 0.3 * torch.randn(1000, 1)  # Linear relation with some noise
+y = 5 * x + 2 + 0.4 * torch.randn(1000, 1)  # Linear relation with some noise
 # Create DataLoader and split into Validation and Training sets
 dataset = TensorDataset(x, y)
 train_set_size = int(len(dataset) * 0.8)
@@ -66,8 +74,10 @@ train_loader = DataLoader(train_set)
 valid_loader = DataLoader(valid_set)
 # Initialize model
 model = LinearRegressionModel(input_dim=1, output_dim=1)
+#Set up the Logger
+logger = TensorBoardLogger("tb_logs", name="linear_regression")
 # Set up trainer
-trainer = pl.Trainer(max_epochs=10)
+trainer = pl.Trainer(max_epochs=10, logger=logger)
 # Train model
 trainer.fit(model, train_loader, valid_loader)
 # Switch model to evaluation mode
