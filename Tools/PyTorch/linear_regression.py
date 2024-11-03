@@ -6,7 +6,20 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch.utils.data as data
 import matplotlib.pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
+import wandb
 
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="Linear Regression Project",
+
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": 0.02,
+    "architecture": "CNN",
+    "dataset": "CIFAR-100",
+    "epochs": 10,
+    }
+)
 
 class LinearRegressionModel(pl.LightningModule):
     def __init__(self, input_dim: int, output_dim: int):
@@ -31,7 +44,7 @@ class LinearRegressionModel(pl.LightningModule):
         E = torch.square(e)
         loss = 1/N * E
         #log loss
-        self.log("train_loss", loss, prog_bar=True)
+        wandb.log({"loss": loss})
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -75,9 +88,9 @@ valid_loader = DataLoader(valid_set)
 # Initialize model
 model = LinearRegressionModel(input_dim=1, output_dim=1)
 #Set up the Logger
-logger = TensorBoardLogger("tb_logs", name="linear_regression")
+# logger = TensorBoardLogger("tb_logs", name="linear_regression")
 # Set up trainer
-trainer = pl.Trainer(max_epochs=10, logger=logger)
+trainer = pl.Trainer(max_epochs=10)
 # Train model
 trainer.fit(model, train_loader, valid_loader)
 # Switch model to evaluation mode
