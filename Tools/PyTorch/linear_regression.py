@@ -12,7 +12,6 @@ import wandb
 wandb.init(
     # set the wandb project where this run will be logged
     project="Linear Regression Project",
-
     # track hyperparameters and run metadata
     config={
     "learning_rate": 0.01,
@@ -45,6 +44,7 @@ class LinearRegressionModel(pl.LightningModule):
         E = torch.square(e)
         loss = 1/N * E
         #log loss
+        self.log("loss", loss)
         wandb.log({"loss": loss})
         return loss
     
@@ -60,6 +60,7 @@ class LinearRegressionModel(pl.LightningModule):
         val_loss = 1/N * E
         #log loss
         self.log("val_loss", val_loss, prog_bar=True)
+        wandb.log({"val_loss": val_loss})
         return val_loss
     
     def configure_optimizers(self):
@@ -76,7 +77,7 @@ class LinearRegressionModel(pl.LightningModule):
     #     self.train()
 # Define the early stopping callback
 early_stopping = EarlyStopping(
-    monitor="val_loss",       # Metric to monitor
+    monitor="loss",       # Metric to monitor
     patience=5,               # Number of epochs with no improvement after which training will be stopped
     verbose=True,             # Print a message when stopping
     mode="min"                # "min" because we want to minimize the validation loss
