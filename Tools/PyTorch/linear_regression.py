@@ -14,7 +14,7 @@ wandb.init(
 
     # track hyperparameters and run metadata
     config={
-    "learning_rate": 0.02,
+    "learning_rate": 0.01,
     "architecture": "CNN",
     "dataset": "CIFAR-100",
     "epochs": 10,
