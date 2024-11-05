@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch.utils.data as data
 import matplotlib.pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import EarlyStopping
 import wandb
 
 wandb.init(
@@ -73,6 +74,13 @@ class LinearRegressionModel(pl.LightningModule):
     #         y_pred = self(self.x_range)
     #         self.predictions_over_time.append(y_pred.cpu().numpy())  # Store predictions
     #     self.train()
+# Define the early stopping callback
+early_stopping = EarlyStopping(
+    monitor="val_loss",       # Metric to monitor
+    patience=5,               # Number of epochs with no improvement after which training will be stopped
+    verbose=True,             # Print a message when stopping
+    mode="min"                # "min" because we want to minimize the validation loss
+)
 # Generate data
 torch.manual_seed(42)  # For reproducibility
 x = torch.randn(1000, 1)  # 1000 samples, 1 feature
@@ -87,10 +95,8 @@ train_loader = DataLoader(train_set)
 valid_loader = DataLoader(valid_set)
 # Initialize model
 model = LinearRegressionModel(input_dim=1, output_dim=1)
-#Set up the Logger
-# logger = TensorBoardLogger("tb_logs", name="linear_regression")
 # Set up trainer
-trainer = pl.Trainer(max_epochs=10)
+trainer = pl.Trainer(max_epochs=10, callbacks=[early_stopping])
 # Train model
 trainer.fit(model, train_loader, valid_loader)
 # Switch model to evaluation mode
