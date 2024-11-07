@@ -96,7 +96,7 @@ def target_distribution(x):
 # Training the Normalizing Flow
 input_dim = 2
 flow = NormalizingFlow(input_dim)
-optimizer = optim.Adam(flow.parameters(), lr=1e-3)
+optimizer = optim.Adam(flow.parameters(), lr=1e-5)
 base_dist = torch.distributions.MultivariateNormal(torch.zeros(input_dim), torch.eye(input_dim))
 
 num_samples = 1000
