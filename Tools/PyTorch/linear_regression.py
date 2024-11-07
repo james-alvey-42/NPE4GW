@@ -67,9 +67,9 @@ class LinearRegressionModel(pl.LightningModule):
     
     def configure_optimizers(self):
         # Set up an optimizer
-        optimizer = torch.optim.SGD(self.parameters(), lr=0.01)
+        optimizer = torch.optim.SGD(self.parameters(), lr=0.05)
          # Initialize scheduler (StepLR in this case)
-        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+        scheduler = StepLR(optimizer, step_size=1, gamma=0.01)
         # Return both the optimizer and scheduler
         return {
             "optimizer": optimizer,
