@@ -1,12 +1,14 @@
 #dependencies 
+from pytorch_lightning.loggers import WandbLogger
 import torch
 from torch import nn
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset
 import torch.utils.data as data
 import matplotlib.pyplot as plt
-from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping
+from torch.optim.lr_scheduler import StepLR
+from pytorch_lightning.callbacks import LearningRateMonitor
 import wandb
 
 wandb.init(
@@ -66,7 +68,18 @@ class LinearRegressionModel(pl.LightningModule):
     def configure_optimizers(self):
         # Set up an optimizer
         optimizer = torch.optim.SGD(self.parameters(), lr=0.01)
-        return optimizer
+         # Initialize scheduler (StepLR in this case)
+        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+        # Return both the optimizer and scheduler
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "train_loss",  # Optionally monitor a metric (e.g., training loss)
+                "interval": "epoch",      # Update the scheduler every epoch
+                "frequency": 1            # Update every epoch (if you want a different frequency)
+            }
+        }
     
     # def on_epoch_end(self):
     #     # Make predictions on validation data
@@ -75,6 +88,8 @@ class LinearRegressionModel(pl.LightningModule):
     #         y_pred = self(self.x_range)
     #         self.predictions_over_time.append(y_pred.cpu().numpy())  # Store predictions
     #     self.train()
+# Define the WandB logger for LR    
+wandb_logger = WandbLogger(project="Linear Regression Project")
 # Define the early stopping callback
 early_stopping = EarlyStopping(
     monitor="loss",       # Metric to monitor
@@ -82,6 +97,8 @@ early_stopping = EarlyStopping(
     verbose=True,             # Print a message when stopping
     mode="min"                # "min" because we want to minimize the validation loss
 )
+# Create a LearningRateMonitor callback
+lr_monitor = LearningRateMonitor(logging_interval="epoch")  # "step" logs the learning rate at every training step
 # Generate data
 torch.manual_seed(42)  # For reproducibility
 x = torch.randn(1000, 1)  # 1000 samples, 1 feature
@@ -97,7 +114,7 @@ valid_loader = DataLoader(valid_set)
 # Initialize model
 model = LinearRegressionModel(input_dim=1, output_dim=1)
 # Set up trainer
-trainer = pl.Trainer(max_epochs=10, callbacks=[early_stopping])
+trainer = pl.Trainer(max_epochs=10, logger=wandb_logger, callbacks=[early_stopping, lr_monitor])
 # Train model
 trainer.fit(model, train_loader, valid_loader)
 # Switch model to evaluation mode
