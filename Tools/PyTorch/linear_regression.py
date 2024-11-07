@@ -92,7 +92,7 @@ class LinearRegressionModel(pl.LightningModule):
 wandb_logger = WandbLogger(project="Linear Regression Project")
 # Define the early stopping callback
 early_stopping = EarlyStopping(
-    monitor="loss",       # Metric to monitor
+    monitor="val_loss",       # Metric to monitor
     patience=5,               # Number of epochs with no improvement after which training will be stopped
     verbose=True,             # Print a message when stopping
     mode="min"                # "min" because we want to minimize the validation loss
