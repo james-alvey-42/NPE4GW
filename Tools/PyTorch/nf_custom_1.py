@@ -3,10 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.distributions as D
 import matplotlib.pyplot as plt
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import EarlyStopping
-from torch.optim.lr_scheduler import StepLR
-from pytorch_lightning.callbacks import LearningRateMonitor
 import wandb
 # Coupling layer for a 1D flow, no splitting needed
 wandb.init(
@@ -90,7 +86,12 @@ def train_flow():
 
     validation_data = target_dist.sample((1000, 1))
     validation_interval = 500  # Run validation every 500 steps
+    patience = 5               # Early stopping patience (in validation intervals)
+    best_validation_loss = float('inf')
+    no_improvement_count = 0
 
+  # Define the learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1, verbose=False)
 
     for step in range(num_steps):
         x = target_dist.sample((128, 1))  # Ensure shape is [batch_size, 1] for 1D
@@ -100,13 +101,28 @@ def train_flow():
         loss.backward()
         optimizer.step()
         wandb.log({"loss": loss})
+
+        current_lr = optimizer.param_groups[0]['lr']  # Get current learning rate
+        wandb.log({"learning_rate": current_lr})
         
         if step % validation_interval == 0:
             with torch.no_grad():
                 validation_loss = -flow.log_prob(validation_data).mean().item()
                 wandb.log({"val_loss": validation_loss})
             print(f"Step {step}: Training Loss = {loss.item()}, Validation Loss = {validation_loss}")
-
+            # Early stopping check
+            if validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+                no_improvement_count = 0  # Reset counter if improvement is seen
+            elif best_validation_loss - validation_loss < 0.005:
+                no_improvement_count = 0  # Reset counter if change is not too large
+            else:
+                no_improvement_count += 1
+                if no_improvement_count >= patience:
+                    print("Early stopping triggered.")
+                    break  # Stop training if no improvement seen for 'patience' validations
+                        # Step the learning rate scheduler based on validation loss
+            scheduler.step(validation_loss)
 
     with torch.no_grad():
         generated_samples = flow.sample(5000).numpy()
