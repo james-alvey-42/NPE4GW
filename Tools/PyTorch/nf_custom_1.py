@@ -3,8 +3,23 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.distributions as D
 import matplotlib.pyplot as plt
-
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import EarlyStopping
+from torch.optim.lr_scheduler import StepLR
+from pytorch_lightning.callbacks import LearningRateMonitor
+import wandb
 # Coupling layer for a 1D flow, no splitting needed
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="Normalizing Flows",
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": 0.01,
+    "architecture": "CNN",
+    "dataset": "CIFAR-100",
+    "epochs": 10,
+    }
+)
 class CouplingLayer(nn.Module):
     def __init__(self):
         super().__init__()
@@ -73,6 +88,10 @@ def train_flow():
     optimizer = optim.Adam(flow.parameters(), lr=1e-3)
     num_steps = 5000
 
+    validation_data = target_dist.sample((1000, 1))
+    validation_interval = 500  # Run validation every 500 steps
+
+
     for step in range(num_steps):
         x = target_dist.sample((128, 1))  # Ensure shape is [batch_size, 1] for 1D
         loss = -flow.log_prob(x).mean()   # Negative log likelihood
@@ -80,9 +99,14 @@ def train_flow():
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        wandb.log({"loss": loss})
+        
+        if step % validation_interval == 0:
+            with torch.no_grad():
+                validation_loss = -flow.log_prob(validation_data).mean().item()
+                wandb.log({"val_loss": validation_loss})
+            print(f"Step {step}: Training Loss = {loss.item()}, Validation Loss = {validation_loss}")
 
-        if step % 1000 == 0:
-            print(f"Step {step}: Loss = {loss.item()}")
 
     with torch.no_grad():
         generated_samples = flow.sample(5000).numpy()
