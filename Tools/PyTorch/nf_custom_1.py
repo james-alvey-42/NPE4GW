@@ -78,7 +78,7 @@ class NormalizingFlow(nn.Module):
 
 # Training function
 def train_flow():
-    num_flows = 4
+    num_flows = 6
     target_dist = D.Normal(-1, 1.2)  # 1D target distribution
     flow = NormalizingFlow(num_flows)
     optimizer = optim.Adam(flow.parameters(), lr=1e-3)
