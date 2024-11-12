@@ -52,7 +52,7 @@ class NormalizingFlow(nn.Module):
         self.flows = nn.ModuleList([CouplingLayer() for _ in range(num_flows)])
         self.mean = nn.Parameter(torch.tensor(0.0))  # Trainable base mean
         self.var = nn.Parameter(torch.tensor(1.0))   # Trainable base variance
-        self.base_dist = D.Normal(0, 1)
+        self.base_dist = D.Normal(self.mean, self.var**2)
 
     def forward(self, x):
         log_det_jacobians = 0
@@ -79,7 +79,7 @@ class NormalizingFlow(nn.Module):
 # Training function
 def train_flow():
     num_flows = 4
-    target_dist = D.Normal(1.3, 0.4)  # 1D target distribution
+    target_dist = D.Normal(1, 1.2)  # 1D target distribution
     flow = NormalizingFlow(num_flows)
     optimizer = optim.Adam(flow.parameters(), lr=1e-3)
     num_steps = 5000
@@ -114,8 +114,6 @@ def train_flow():
             if validation_loss < best_validation_loss:
                 best_validation_loss = validation_loss
                 no_improvement_count = 0  # Reset counter if improvement is seen
-            elif best_validation_loss - validation_loss < 0.005:
-                no_improvement_count = 0  # Reset counter if change is not too large
             else:
                 no_improvement_count += 1
                 if no_improvement_count >= patience:
@@ -130,7 +128,7 @@ def train_flow():
     # Plot the generated samples
     plt.figure(figsize=(8, 6))
     plt.hist(generated_samples, bins=50, density=True, alpha=0.6, color='b', label="Generated Samples")
-    x = torch.linspace(-2, 4, 1000).unsqueeze(1)
+    x = torch.linspace(-5, 7, 1000).unsqueeze(1)
     plt.plot(x.numpy(), target_dist.log_prob(x).exp().numpy(), 'r', linewidth=2, label="Target PDF")
     plt.xlabel("Value")
     plt.ylabel("Density")
