@@ -13,7 +13,7 @@ from torch.distributions.gamma import Gamma
 
  # set the wandb project where this run will be logged
 wandb.init(
-    project="Normalizing Flows - Chi Squared",
+    project="Normalizing Flows - Gamma",
     # track hyperparameters and run metadata
     config={
         "learning_rate": 0.01,
@@ -23,24 +23,23 @@ wandb.init(
     },
 )
 
-class Chi2NF(nn.Module):
+class GammaNF(nn.Module):
     def __init__(self):
         super().__init__()
-        self.mean = nn.Parameter(torch.tensor(3.0))  # Trainable base mean - degrees of freedom
-        self.
-
+        self.scale = nn.Parameter(torch.tensor(3.0))  # Trainable base scale parameter - degrees of freedom
+        self.shape = nn.Parameter(torch.tensor(2.0))
     def log_prob(self, x):
-        return  -0.5 * self.mean - gammaln(0.5*self.mean) + (0.5*self.mean - 1)*torch.log(x) - 0.5*x 
+        return  (self.shape - 1)*torch.log(x) -x/(self.scale) - gammaln(self.shape) - (self.shape)*torch.log(self.scale) 
     
     def sample(self, num_samples):
-        dist = Gamma(0.5*self.mean, 2)
+        dist = Gamma(self.shape, 1/self.scale)
         return dist.sample((num_samples,))
 
-gamma_dist = Gamma(2,2)
+gamma_dist = Gamma(3,1/4)
 x_true = gamma_dist.sample((1000,))
 x_val = gamma_dist.sample((1000,))
 
-nf = Chi2NF()
+nf = GammaNF()
 optimizer = optim.Adam(nf.parameters(), lr=0.001)
 # Define the learning rate scheduler
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -49,18 +48,20 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(
 steps = []
 losses = []
 val_losses = []
-means = []
+scales, shapes = [], []
 samples = []
 validation_interval = 500  # Run validation every 500 steps
-patience = 80  # Early stopping patience (in validation intervals)
+patience = 800  # Early stopping patience (in validation intervals)
 best_validation_loss = float("inf")
 no_improvement_count = 0
 print(nf.state_dict())
+true_log_probs = (3 - 1)*torch.log(x_true) -x_true/(4) - gammaln(torch.tensor(3)) - (3)*torch.log(torch.tensor(3))
+
 
 for i in tqdm.tqdm(range(10000)):
     steps.append(i)
     nf.train()
-    loss = -nf.log_prob(x_true).mean()
+    loss = -nf.log_prob(x_true).mean() + true_log_probs.mean()
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
@@ -71,7 +72,7 @@ for i in tqdm.tqdm(range(10000)):
     wandb.log({"learning_rate": current_lr})
    
     nf.eval()
-    val_loss = -nf.log_prob(x_val).mean()
+    val_loss = -nf.log_prob(x_val).mean() + true_log_probs.mean()
     val_losses.append(val_loss.item())
     scheduler.step(val_loss)
     wandb.log({"val_loss": val_loss})
@@ -88,14 +89,16 @@ for i in tqdm.tqdm(range(10000)):
             break  # Stop training if no improvement seen for 'patience' validations
             # Step the learning rate scheduler based on validation loss
 
-    means.append(nf.mean.item())
+    scales.append(nf.scale.item())
+    shapes.append(nf.shape.item())
     if i == 9999:
         samples.append(nf.sample(2000).detach().numpy())
 
-true_log_probs = -0.5 * 4 - gammaln(torch.tensor(0.5*4)) + (0.5*4 - 1)*torch.log(x_true) - 0.5*x_true
-true_dist = D.Gamma(2,2)
+true_log_probs = (3 - 1)*torch.log(x_true) -x_true/(4) - gammaln(torch.tensor(3)) - (3)*torch.log(torch.tensor(3))
+true_dist = D.Gamma(3,1/4)
 
-if len(steps) > len(means):
+
+if len(steps) > len(scales):
     steps.pop()
     losses.pop()
     val_losses.pop()
@@ -110,13 +113,13 @@ plt.legend(loc='center left')
 
 plt.figure(2)
 plt.title("Convergence")
-plt.plot(steps, means, label='Mean')
+plt.plot(steps, scales, label='Scale Parameter')
+plt.plot(steps, shapes, label='Shape Parameter')
 plt.axhline(-2)
-plt.axhline(4, label="Truth")
 plt.legend()
 plt.ylim(-3, 1)
 
-x = torch.linspace(0, 20, 1000).unsqueeze(1)
+x = torch.linspace(0, 40, 1000).unsqueeze(1)
 plt.figure(3)
 plt.title("Trained vs Target Distribution")
 plt.plot(x.numpy(), true_dist.log_prob(x).exp().numpy(), "r", label="Target PDF")
