@@ -1,0 +1,15 @@
+Questions in astrophysics and cosmology - S8, H0, Lambda etc.
+Precision and accuracy improvements from SBI
+Lambda CDM  - omega matter, structure formation (S8) - wCDM - w = DE eos
+Data x, Model M --> p(theta|x,M), theta model parameters, p(M1|x) vs p(M0|X)
+Evidence networks
+P(theta|x,M) prop to p(x|theta,M) * p(theta|M)
+SBI useful when likelihood unknown or intractable - likelihood free inference, draw x_i from distribution p(x|theta_i) by running simulations
+SBI in astrophysics - 1. simulate mock data, 2. compress mock data 3. run results and do inference
+Accuracy - realistic forward modelling, SBI; Precision - beyond standard statistics
+Gower St Simulations - other parameters is like noise in the forward model, identical to marginalizing - massively reduces dimension of the data
+Compress the maps down using CNNs to get simples summary statistics
+Variational Mutual Information Maximization is formally optimal
+Data cuts
+Extremely fast to reevaluate once likelihood is learnt
+Expected coverage tests - good way of testing to see if the posterior is correct
