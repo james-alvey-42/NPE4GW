@@ -1,0 +1,8 @@
+Deterministic signals and stochastic GW backgrounds 
+Deterministic - localized in the sky, time coherency, typically from binaries
+Stochastic - superposition of many signals, early universe processes, diffuse
+LISA measure - H0, modified gravity and stochastic GW backgrounds
+Laser frequency noise is huge and needs to be suppressed with time delay interferometry
+LISA response function - isotropic and non-chiral spectrum
+Traditional methods quite efficient, guaranteed to converge but scale poorly with no. parameters, require explicit likelihoods
+Non stationary noise - cut data into shorter segments where stationarity holds, train a network to analyze segment-by-segment, and then combine segments assuming each one is an independent draw
