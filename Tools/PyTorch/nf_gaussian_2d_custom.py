@@ -40,8 +40,8 @@ class Gaussian_2D(nn.Module):
         return mvn.sample((num_samples,))
 
 mean = torch.tensor([-2, 1],dtype=torch.float32)  
-covariance = torch.tensor([[4, 0*2*1], 
-                           [0*2*1, 1]], dtype=torch.float32)
+covariance = torch.tensor([[4, 0.3*2*1], 
+                           [0.3*2*1, 1]], dtype=torch.float32)
 true_dist = D.MultivariateNormal(mean, covariance_matrix=covariance)
 
 true = true_dist.sample((1000,))
