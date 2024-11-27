@@ -1,103 +1,120 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torch.optim as optim
+from torch.distributions import MultivariateNormal
+import matplotlib.pyplot as plt
+import numpy as np
 
 class MaskedLinear(nn.Linear):
-    def __init__(self, in_features, out_features, mask, bias=True):
-        super(MaskedLinear, self).__init__(in_features, out_features, bias)
-        # Register the mask as a buffer to avoid parameterization
+    """Masked Linear Layer for autoregressive connections."""
+    def __init__(self, in_features, out_features, mask):
+        super().__init__(in_features, out_features)
         self.register_buffer('mask', mask)
 
-    def forward(self, input):
-        # Debugging: Check the shapes
-        print(f"Weight shape: {self.weight.shape}, Mask shape: {self.mask.shape}")
-        assert self.weight.shape == self.mask.shape, "Weight and mask must have the same shape!"
-        return F.linear(input, self.mask * self.weight, self.bias)
-
+    def forward(self, x):
+        return F.linear(x, self.mask * self.weight, self.bias)
 
 class MADE(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_hidden_layers):
-        super(MADE, self).__init__()
-        self.input_dim = input_dim
-
-        # Generate masks
-        self.masks = self.create_masks(input_dim, hidden_dim, num_hidden_layers)
-
-        # Build network layers
-        layers = []
-        in_dim = input_dim
-        for i in range(num_hidden_layers):
-            out_dim = hidden_dim
-            layers.append(MaskedLinear(in_dim, out_dim, self.masks[i]))
-            layers.append(nn.ReLU())
-            in_dim = hidden_dim
-        # Final output layer
-        layers.append(MaskedLinear(in_dim, input_dim, self.masks[-1]))
-        self.net = nn.Sequential(*layers)
-
-    def create_masks(self, input_dim, hidden_dim, num_hidden_layers):
-        """Generate masks for each layer."""
-        masks = []
-
-        # Degrees for inputs and hidden neurons
-        input_degrees = torch.arange(1, input_dim + 1)
-        hidden_degrees = [
-            torch.randint(1, input_dim + 1, (hidden_dim,))
-            for _ in range(num_hidden_layers)
-        ]
-
-        # Mask: input to first hidden layer
-        masks.append((hidden_degrees[0][:, None] >= input_degrees[None, :]).float())
-
-        # Masks: hidden to hidden layers
-        for i in range(1, num_hidden_layers):
-            masks.append((hidden_degrees[i][:, None] >= hidden_degrees[i - 1][None, :]).float())
-
-        # Mask: last hidden to output layer
-        masks.append((input_degrees[None, :] >= hidden_degrees[-1][:, None]).float())
-
-        # Debugging: Print all mask shapes
-        for i, mask in enumerate(masks):
-            print(f"Mask {i} shape: {mask.shape}")
-
-        return masks
+    """Autoregressive network to parameterize the transformation."""
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        self.hidden = nn.Linear(input_dim, hidden_dim)
+        self.out_scale = nn.Linear(hidden_dim, input_dim)
+        self.out_shift = nn.Linear(hidden_dim, input_dim)
 
     def forward(self, x):
-        return self.net(x)
+        h = F.relu(self.hidden(x))
+        scale = self.out_scale(h)
+        shift = self.out_shift(h)
+        scale = torch.tanh(scale)  # Ensures stability
+        return scale, shift
 
-
-class MAF(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_hidden_layers, num_flows):
-        super(MAF, self).__init__()
-        self.flows = nn.ModuleList([
-            MADE(input_dim, hidden_dim, num_hidden_layers)
-            for _ in range(num_flows)
-        ])
-        self.base_dist = torch.distributions.Normal(0, 1)
+class MaskedAutoregressiveFlow(nn.Module):
+    """A simple Masked Autoregressive Flow."""
+    def __init__(self, input_dim, hidden_dim, num_flows):
+        super().__init__()
+        self.base_dist = MultivariateNormal(torch.zeros(input_dim), torch.eye(input_dim))
+        self.flows = nn.ModuleList([MADE(input_dim, hidden_dim) for _ in range(num_flows)])
 
     def forward(self, x):
-        log_det_jacobian = 0
+        """Transforms base samples to target samples."""
+        log_det = 0
+        z = x
         for flow in self.flows:
-            z = flow(x)
-            x = z
-        return z, log_det_jacobian
+            scale, shift = flow(z)
+            z = z * torch.exp(scale) + shift
+            log_det += scale.sum(-1)
+        return z, log_det
+
+    def inverse(self, z):
+        """Transforms target samples back to base samples."""
+        x = z
+        for flow in reversed(self.flows):
+            scale, shift = flow(x)
+            x = (x - shift) * torch.exp(-scale)
+        return x
 
     def log_prob(self, x):
-        z, log_det_jacobian = self.forward(x)
-        log_base_prob = torch.sum(self.base_dist.log_prob(z), dim=1)
-        return log_base_prob + log_det_jacobian
+        """Computes the log-probability of the input under the model."""
+        z, log_det = self.forward(x)
+        base_log_prob = self.base_dist.log_prob(z)
+        return base_log_prob + log_det
 
+# Generate synthetic data: mixture of Gaussians
+def generate_data(n_samples):
+    centers = [(-2, -2), (2, 2), (-2, 2), (2, -2)]
+    std = 0.5
+    data = []
+    for center in centers:
+        samples = np.random.normal(center, std, size=(n_samples // len(centers), 2))
+        data.append(samples)
+    data = np.concatenate(data, axis=0)
+    np.random.shuffle(data)
+    return torch.tensor(data, dtype=torch.float32)
 
-# Example usage
-if __name__ == "__main__":
-    input_dim = 2
-    hidden_dim = 32
-    num_hidden_layers = 2
-    num_flows = 3
+# Training function
+def train(model, data, epochs, lr):
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        log_probs = model.log_prob(data)
+        loss = -log_probs.mean()
+        loss.backward()
+        optimizer.step()
+        if (epoch + 1) % 50 == 0:
+            print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
 
-    maf = MAF(input_dim, hidden_dim, num_hidden_layers, num_flows)
+# Plot learned distribution
+def plot_density(model, grid_size=100):
+    x = torch.linspace(-6, 6, grid_size)
+    y = torch.linspace(-6, 6, grid_size)
+    xx, yy = torch.meshgrid(x, y)
+    grid = torch.stack([xx.flatten(), yy.flatten()], dim=-1)
+    with torch.no_grad():
+        log_probs = model.log_prob(grid)
+    probs = torch.exp(log_probs).reshape(grid_size, grid_size)
+    plt.contourf(xx, yy, probs, levels=50, cmap='viridis')
+    plt.colorbar(label="Density")
+    plt.title("Learned Probability Distribution")
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+    plt.show()
 
-    x = torch.randn(10, input_dim)
-    log_prob = maf.log_prob(x)
-    print("Log probabilities:", log_prob)
+# Hyperparameters
+input_dim = 2
+hidden_dim = 32
+num_flows = 2
+epochs = 500
+lr = 1e-3
+
+# Data
+n_samples = 1000
+data = generate_data(n_samples)
+
+# Model and training
+model = MaskedAutoregressiveFlow(input_dim, hidden_dim, num_flows)
+train(model, data, epochs, lr)
+
+# Plot learned distribution
+plot_density(model)
