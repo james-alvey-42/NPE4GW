@@ -5,6 +5,23 @@ import torch.optim as optim
 from torch.distributions import MultivariateNormal
 import matplotlib.pyplot as plt
 import numpy as np
+import tqdm
+import wandb
+
+wandb.init(
+    project="MAF - Gaussian mixture",
+    # track hyperparameters and run metadata
+    config={
+        "learning_rate": 0.01,
+        "architecture": "CNN",
+        "dataset": "CIFAR-100",
+        "epochs": 10,
+    },
+)
+
+validation_interval = 500  # Run validation every 500 steps
+patience = 80  # Early stopping patience (in validation intervals)
+best_validation_loss = float("inf")
 
 class MaskedLinear(nn.Linear):
     """Masked Linear Layer for autoregressive connections."""
@@ -62,7 +79,7 @@ class MaskedAutoregressiveFlow(nn.Module):
         return base_log_prob + log_det
 
 # Generate synthetic data: mixture of Gaussians
-def generate_data(n_samples):
+def generate_data(n_samples, train_ratio=0.8):
     centers = [(-2, -2), (2, 2), (-2, 2), (2, -2)]
     std = 0.5
     data = []
@@ -71,50 +88,113 @@ def generate_data(n_samples):
         data.append(samples)
     data = np.concatenate(data, axis=0)
     np.random.shuffle(data)
-    return torch.tensor(data, dtype=torch.float32)
+    data = torch.tensor(data, dtype=torch.float32)
+
+    n_train = int(len(data) * train_ratio)
+    train_data = data[:n_train]
+    val_data = data[n_train:]
+    return train_data, val_data
 
 # Training function
-def train(model, data, epochs, lr):
+def train(model, train_data, val_data, epochs, lr):
+    patience = 50  # Early stopping patience (in validation intervals)
+    best_validation_loss = float("inf")
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    for epoch in range(epochs):
-        optimizer.zero_grad()
-        log_probs = model.log_prob(data)
-        loss = -log_probs.mean()
-        loss.backward()
-        optimizer.step()
-        if (epoch + 1) % 50 == 0:
-            print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=1, verbose=False
+    )
+    for epoch in tqdm.tqdm(range(epochs)):
 
+        model.train()
+        optimizer.zero_grad()
+        train_log_probs = model.log_prob(train_data)
+        train_loss = -train_log_probs.mean()
+        train_loss.backward()
+        optimizer.step()
+        wandb.log({"Train Loss": train_loss})
+
+        current_lr = optimizer.param_groups[0]["lr"]  # Get current learning rate
+        wandb.log({"learning_rate": current_lr})
+
+        model.eval()
+        with torch.no_grad():
+            val_log_probs = model.log_prob(val_data)
+            val_loss = -val_log_probs.mean()
+            scheduler.step(val_loss)
+            wandb.log({"Val Loss": val_loss})
+
+            if val_loss < best_validation_loss:
+                best_validation_loss = val_loss
+                no_improvement_count = 0  # Reset counter if improvement is seen
+            else:
+                no_improvement_count += 1
+                if no_improvement_count >= patience:
+                    print("Early stopping triggered.")
+                    break  
 # Plot learned distribution
-def plot_density(model, grid_size=100):
+
+def target_density(grid):
+    """Compute the target density (mixture of Gaussians) on a grid."""
+    density = 0
+    centers = [(-2, -2), (2, 2), (-2, 2), (2, -2)]
+    std = 0.5
+    for center in centers:
+        mvn = MultivariateNormal(torch.tensor(center, dtype=torch.float32), 
+                                 torch.eye(2) * std**2)
+        density += torch.exp(mvn.log_prob(grid))
+    density /= len(centers)  # Normalize by number of components
+    return density
+
+def plot_comparison(model, grid_size=100):
+    """Plot both the learned and target densities."""
+    # Generate grid
     x = torch.linspace(-6, 6, grid_size)
     y = torch.linspace(-6, 6, grid_size)
     xx, yy = torch.meshgrid(x, y)
     grid = torch.stack([xx.flatten(), yy.flatten()], dim=-1)
+
+    # Compute learned density
     with torch.no_grad():
         log_probs = model.log_prob(grid)
-    probs = torch.exp(log_probs).reshape(grid_size, grid_size)
-    plt.contourf(xx, yy, probs, levels=50, cmap='viridis')
+    learned_density = torch.exp(log_probs).reshape(grid_size, grid_size)
+
+    # Compute target density
+    target_density_vals = target_density(grid).reshape(grid_size, grid_size)
+
+    # Plot target density
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.contourf(xx, yy, target_density_vals, levels=50, cmap='viridis')
     plt.colorbar(label="Density")
-    plt.title("Learned Probability Distribution")
+    plt.title("Target Density (Mixture of Gaussians)")
     plt.xlabel("x1")
     plt.ylabel("x2")
+
+    # Plot learned density
+    plt.subplot(1, 2, 2)
+    plt.contourf(xx, yy, learned_density, levels=50, cmap='viridis')
+    plt.colorbar(label="Density")
+    plt.title("Learned Density (MAF)")
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+
+    plt.tight_layout()
     plt.show()
 
 # Hyperparameters
 input_dim = 2
-hidden_dim = 32
-num_flows = 2
-epochs = 500
+hidden_dim = 200
+num_flows = 4
+epochs = 1000
 lr = 1e-3
 
 # Data
-n_samples = 1000
-data = generate_data(n_samples)
+n_samples = 2000
+train_data, val_data = generate_data(n_samples)
 
 # Model and training
 model = MaskedAutoregressiveFlow(input_dim, hidden_dim, num_flows)
-train(model, data, epochs, lr)
+train(model, train_data, val_data, epochs, lr)
 
 # Plot learned distribution
-plot_density(model)
+plot_comparison(model)
