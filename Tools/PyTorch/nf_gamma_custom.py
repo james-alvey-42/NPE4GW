@@ -127,4 +127,5 @@ plt.hist(samples, bins=40,
         density=True,
         alpha=0.6,
         label="Generated Samples")
+plt.legend()
 plt.show()

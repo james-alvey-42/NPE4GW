@@ -28,6 +28,7 @@ class Gaussian_2D(nn.Module):
         self.mean2 = nn.Parameter(torch.tensor(0.0))  # Trainable base mean
         self.log_var2 = nn.Parameter(torch.tensor(0.0))   # Trainable base variance
         self.rho = nn.Parameter(torch.tensor(0.0))
+
     def log_prob(self, x, y):
         
         return -0.5 * (self.log_var1 + self.log_var2 + torch.log(1-self.rho**2) + ((x - self.mean1) ** 2 / torch.exp(self.log_var1 + 1e-6)+(y - self.mean2) ** 2 / torch.exp(self.log_var2 + 1e-6) - 2*self.rho*((x - self.mean1)*(y-self.mean2)/(torch.exp(0.5*(self.log_var1+self.log_var2+ 1e-6)))))/(1-self.rho**2))
@@ -112,7 +113,7 @@ plt.figure(3, figsize=(8,6))
 plt.contourf(X, Y, Z, levels=50, cmap="hot")  # Use contourf for filled heatmap
 plt.colorbar(label="Density")
 plt.scatter(samples_array[:, 0], samples_array[:, 1], s=5, color='blue', alpha=0.3, label="Data points")  # Overlay points
-plt.title("Trained Density Heatmap")
+plt.title("2D Gaussian Trained Density Heatmap")
 plt.xlabel("X-axis")
 plt.ylabel("Y-axis")
 plt.legend()
