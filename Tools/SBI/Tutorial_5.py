@@ -1,12 +1,6 @@
 # import required modules
 from sbi.utils.get_nn_models import posterior_nn
-
-# import the different choices of pre-configured embedding networks
-from sbi.neural_nets.embedding_nets import (
-    FCEmbedding,
-    CNNEmbedding,
-    PermutationInvariantEmbedding
-)
+#from sbi.neural_nets.embedding_nets import CNNEmbedding
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -19,6 +13,24 @@ from sbi.utils.user_input_checks import (
     process_prior,
     process_simulator,
 )
+
+class SummaryNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # 2D convolutional layer
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, padding=2)
+        # Maxpool layer that reduces 32x32 image to 4x4
+        self.pool = nn.MaxPool2d(kernel_size=8, stride=8)
+        # Fully connected layer taking as input the 6 flattened output arrays
+        # from the maxpooling layer
+        self.fc = nn.Linear(in_features=6 * 4 * 4, out_features=8)
+
+    def forward(self, x):
+        x = x.view(-1, 1, 32, 32)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = x.view(-1, 6 * 4 * 4)
+        x = F.relu(self.fc(x))
+        return x
 
 def simulator_model(parameter, return_points=False):
     """Simulator model with two-dimensional input parameter and 1024-D output
@@ -82,17 +94,17 @@ def simulator_model(parameter, return_points=False):
 
 
 # choose which type of pre-configured embedding net to use (e.g. CNN)
-embedding_net = CNNEmbedding(
-    input_shape=(32, 32),
-    in_channels=1,
-    out_channels_per_layer=[6],
-    num_conv_layers=1,
-    num_linear_layers=1,
-    output_dim=8,
-    kernel_size=5,
-    pool_kernel_size=8
-)
-
+#embedding_net = CNNEmbedding(
+#     input_shape=(32, 32),
+#     in_channels=1,
+#     out_channels_per_layer=[6],
+#     num_conv_layers=1,
+#     num_linear_layers=1,
+#     output_dim=8,
+#     kernel_size=5,
+#     pool_kernel_size=8
+# ) 
+embedding_net = SummaryNet()
 # instantiate the conditional neural density estimator
 neural_posterior = posterior_nn(model="maf", embedding_net=embedding_net)
 
@@ -139,6 +151,6 @@ fig, ax = analysis.pairplot(
 )
 
 plt.show()
-    
+
 
 
