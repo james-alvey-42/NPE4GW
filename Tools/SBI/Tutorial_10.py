@@ -3,6 +3,8 @@ import numpy as np
 import torch
 from IPython.display import HTML
 from matplotlib import animation, rc
+from matplotlib.animation import writers
+from matplotlib import rcParams
 
 from sbi.analysis import (
     conditional_corrcoeff,
@@ -69,6 +71,7 @@ anim = animation.FuncAnimation(
     fig, animate, init_func=init, frames=range(0, 360, 5), interval=150, blit=True
 )
 
-plt.close()
+HTML(anim.to_html5_video())
 
 plt.show()
+
