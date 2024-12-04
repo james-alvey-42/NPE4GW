@@ -29,12 +29,14 @@ fig, ax = pairplot(
     upper=["kde"],
     diag=["kde"],
     figsize=(5, 5),
+    title="Pairplot of Posterior Samples",
 )
 
 corr_matrix_marginal = np.corrcoef(posterior_samples.T)
 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
 im = plt.imshow(corr_matrix_marginal, clim=[-1, 1], cmap="PiYG")
 _ = fig.colorbar(im)
+plt.title("Marginal Correlation Matrix")
 
 rc("animation", html="html5")
 
@@ -72,6 +74,26 @@ anim = animation.FuncAnimation(
 )
 
 HTML(anim.to_html5_video())
+
+condition = posterior.sample((1,))
+
+_ = conditional_pairplot(
+    density=posterior,
+    condition=condition,
+    limits=torch.tensor([[-2.0, 2.0]] * 3),
+    figsize=(5, 5),
+    title="Conditional Pairplot",
+)
+
+cond_coeff_mat = conditional_corrcoeff(
+    density=posterior,
+    condition=condition,
+    limits=torch.tensor([[-2.0, 2.0]] * 3),
+)
+fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+im = plt.imshow(cond_coeff_mat, clim=[-1, 1], cmap="PiYG")
+_ = fig.colorbar(im)
+plt.title("Conditional Correlation Matrix")
 
 plt.show()
 
