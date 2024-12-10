@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import torch
 import torch.distributions as D
 
-
 samples = []
 N=20000
 def p(x):
@@ -31,3 +30,4 @@ plt.plot(x, D.Gamma(3,3).log_prob(x).exp().numpy())
 plt.legend(['True Distribution', 'MCMC Samples'])
 plt.title('Metropolis-Hastings Samples')
 plt.show()
+
