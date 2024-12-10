@@ -5,7 +5,7 @@ import torch.distributions as D
 
 
 samples = []
-N=10000
+N=20000
 def p(x):
     return x**2*np.exp(-3*x)
 
