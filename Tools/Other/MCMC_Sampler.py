@@ -20,7 +20,7 @@ for i in range(N):
         x_current = x_proposed
     samples.append(x_current)
     
-#return final 5000 samples
+#return final 15000 samples
 samples = samples[5000:]
 
 plt.hist(samples, bins=100, density=True)
