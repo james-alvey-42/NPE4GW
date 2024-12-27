@@ -38,7 +38,8 @@ def simulator_model(parameter, return_points=False):
     This simulator serves as a basic example for using a neural net for learning
     summary features. It has only two input parameters but generates
     high-dimensional output vectors. The data is generated as follows:
-        (-) Input:  parameter = [r, phi] (1) Generate 100 two-dimensional
+        (-) Input:  parameter = [r, phi] 
+        (1) Generate 100 two-dimensional
         points centered around (r cos(phi),r sin(phi))
             and perturbed by a Gaussian noise with variance 0.01
         (2) Create a grayscale image I of the scattered points with dimensions
