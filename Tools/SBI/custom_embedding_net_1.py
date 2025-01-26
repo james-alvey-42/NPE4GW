@@ -6,7 +6,7 @@ from sbi.utils import BoxUniform
 import matplotlib.pyplot as plt
 
 
-# Define the custom embedding net
+# Define the custom embedding network
 class CustomEmbeddingNet(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(CustomEmbeddingNet, self).__init__()
