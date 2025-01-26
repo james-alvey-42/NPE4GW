@@ -30,8 +30,8 @@ prior = BoxUniform(low=torch.tensor([0.0]), high=torch.tensor([1.0]))
 
 # Define the embedding net with correct input dimensions
 input_dim = 1  # Simulator outputs 1D data
-hidden_dim = 64
-output_dim = 32
+hidden_dim = 32
+output_dim = 16
 embedding_net = CustomEmbeddingNet(input_dim, hidden_dim, output_dim)
 
 # Define the density estimator using the custom embedding network
