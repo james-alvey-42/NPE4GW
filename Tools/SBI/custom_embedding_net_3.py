@@ -49,11 +49,11 @@ def simulator(theta):
     x, y, z = x.unsqueeze(0), y.unsqueeze(0), z.unsqueeze(0)  # Add batch dim
 
     # Extract parameters and add singleton dimensions for broadcasting
-    mean_x, mean_y, mean_z = theta[:, 0:1, None, None, None], theta[:, 1:2, None, None, None], theta[:, 2:3, None, None, None]
+    mean_x, mean_y, mean_z = theta[:, 0, None, None, None], theta[:, 1, None, None, None], theta[:, 2, None, None, None]
 
     # Compute Gaussian blob for each batch
     gaussian = torch.exp(
-        -((x - mean_x) ** 2 + (y - mean_y) ** 2 + (z - mean_z) ** 2) / 0.1
+        -((x - mean_x) ** 2 + (y - mean_y) ** 2 + (z - mean_z) ** 2) 
     )
 
     # Add noise
