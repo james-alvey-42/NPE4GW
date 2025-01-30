@@ -34,7 +34,8 @@ class CustomEmbeddingNet2(nn.Module):
 # Define the simulator
 def simulator(theta):
     # Simulate a sequence of length 16
-    x = torch.sin(theta * 3.14 * torch.linspace(0, 1, steps=16))  # Length of 16
+    x = torch.sin(theta * 3.14 * torch.linspace(0, 1, steps=16))
+    x = x + 0.1*torch.rand_like(x) # Length of 16
     return x  # Shape: [Batch Size, Sequence Length]
 
 # Define the prior

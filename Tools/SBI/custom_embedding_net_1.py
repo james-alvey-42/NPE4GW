@@ -23,7 +23,7 @@ class CustomEmbeddingNet(nn.Module):
 
 # Define the simulator
 def simulator(theta):
-    return theta + torch.randn_like(theta)  # Example noisy simulator
+    return theta + torch.randn_like(theta)*0.1  # Example noisy simulator
 
 # Define the prior
 prior = BoxUniform(low=torch.tensor([0.0]), high=torch.tensor([1.0]))
@@ -53,7 +53,7 @@ posterior = inference.build_posterior(inferer)
 
 #Plot the posterior
 # Sample from the posterior
-theta_test = torch.tensor([[0.3]])  # Example observed data point
+theta_test = torch.tensor([[0.1]])  # Example observed data point
 x_obs = simulator(theta_test)
 samples = posterior.sample((10000,), x=x_obs)
 
