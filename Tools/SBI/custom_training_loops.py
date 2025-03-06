@@ -100,7 +100,7 @@ if __name__ == "__main__":
     learning_rates = [] # setup for loss tracking (in addition to wandb)
     post_samples = [] # setup for loss tracking (in addition to wandb)
 
-    num_epochs = 10
+    num_epochs = 100
     step = 0
     epoch_val_loss = 0.0
     
