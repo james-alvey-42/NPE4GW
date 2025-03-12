@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 lrs = pd.read_pickle('/Users/knana/Documents/GitHub/NPE4GW/Tools/Other/logratios_R1 (1)')
-print(lrs.logratios.shape)
 
 #plot histogram of logratios
 plt.figure(figsize=(15, 8))
