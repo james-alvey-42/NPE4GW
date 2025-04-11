@@ -9,6 +9,7 @@ from sbi.utils.user_input_checks import (
     process_simulator,
 )
 from sbi.neural_nets.net_builders import build_nsf
+from sbi.inference.posteriors import DirectPosterior
 import sys
 from torch.optim import AdamW
 import torch.nn as nn
@@ -46,8 +47,6 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 
 # Consistency check after making ready for sbi.
 check_sbi_inputs(simulator, prior)
-
-inference = NPE(prior=prior)
 
 num_rounds = 4
 x_o = torch.zeros(
@@ -125,7 +124,7 @@ for round_ in range(num_rounds):
                 print("Early stopping triggered.")
                 break  # Stop training if no improvement seen for 'patience' validations
 
-    posterior = inference.build_posterior(density_estimator)
+    posterior = DirectPosterior(density_estimator, prior)
     posteriors.append(posterior)
     proposal = posterior.set_default_x(x_o)
 
