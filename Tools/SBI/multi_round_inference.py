@@ -97,7 +97,11 @@ for round in range(num_rounds):
         total_loss = 0.0
         with tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as pbar:
             for batch_theta, batch_x in pbar:
-                loss = density_estimator.loss(batch_theta, batch_x).mean()
+                with torch.no_grad():
+                    log_p_theta = prior.log_prob(batch_theta)
+                    log_q_theta = proposal.log_prob(batch_theta)
+                    weights = torch.exp(log_p_theta - log_q_theta)
+                loss = (density_estimator.loss(batch_theta, batch_x).flatten()*weights).mean()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -110,7 +114,11 @@ for round in range(num_rounds):
         epoch_val_loss = 0.0
         with torch.no_grad():
             for theta_val_batch, x_val_batch in val_loader:
-                val_loss = density_estimator.loss(theta_val_batch, x_val_batch).mean().item()
+                with torch.no_grad():
+                    log_p_theta = prior.log_prob(theta_val_batch)
+                    log_q_theta = proposal.log_prob(theta_val_batch)
+                    weights = torch.exp(log_p_theta - log_q_theta)
+                val_loss =(density_estimator.loss(theta_val_batch, x_val_batch).flatten()*weights).mean().item()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  # average over all validation points
         wandb.log({"val_loss": epoch_val_loss, "epoch": epoch})
