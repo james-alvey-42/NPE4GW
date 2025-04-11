@@ -89,25 +89,34 @@ for round in range(num_rounds):
     train_loader = DataLoader(TensorDataset(theta, x), batch_size=batch_size, shuffle=True)
     val_theta, val_x = simulate_for_sbi(simulator, proposal, num_simulations=500)
     val_dataset = TensorDataset(val_theta, val_x)
-    val_loader = DataLoader(TensorDataset(val_theta, val_x), batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
+    optimizer = AdamW(density_estimator.parameters(), lr=1e-3)
 
     for epoch in range(num_epochs):
         density_estimator.train()
         total_loss = 0.0
         with tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as pbar:
             for batch_theta, batch_x in pbar:
+                batch_size = batch_theta.size(0)
+                num_atoms = min(10, batch_size)
+
+                # Create contrastive atoms
                 with torch.no_grad():
-                    log_p_theta = prior.log_prob(batch_theta)
-                    log_q_theta = proposal.log_prob(batch_theta)
-                    log_weights = log_p_theta - log_q_theta
-                losses = density_estimator.loss(batch_theta, batch_x)
-                if round == 0:
-                    log_weights = torch.zeros_like(losses)
-                else:
-                    log_weights = log_weights / log_weights.sum() #normalize
-                loss = (losses - log_weights).mean()
+                    probs = torch.ones(batch_size, batch_size, device=batch_theta.device) * (1 - torch.eye(batch_size, device=batch_theta.device)) / (batch_size - 1)
+                    choices = torch.multinomial(probs, num_samples=num_atoms - 1, replacement=False)
+                    contrastive_theta = batch_theta[choices]
+
+                atomic_theta = torch.cat((batch_theta[:, None, :], contrastive_theta), dim=1).reshape(batch_size * num_atoms, -1)
+                repeated_x = batch_x.repeat_interleave(num_atoms, dim=0)
+
+                log_prob_prior = prior.log_prob(atomic_theta).reshape(batch_size, num_atoms)
+                log_prob_post = density_estimator.log_prob(atomic_theta, repeated_x).reshape(batch_size, num_atoms)
+
+                unnormalized_log_prob = log_prob_post - log_prob_prior
+                log_prob_proposal_posterior = unnormalized_log_prob[:, 0] - torch.logsumexp(unnormalized_log_prob, dim=-1)
+                loss = -log_prob_proposal_posterior.mean()
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -115,33 +124,40 @@ for round in range(num_rounds):
                 wandb.log({"train_loss": loss.item()})
                 pbar.set_postfix({"Train Loss": f"{loss.item():.4f}"})
 
-        # Validation loop (still 50 samples, for speed)
+        # Validation
         density_estimator.eval()
         epoch_val_loss = 0.0
         with torch.no_grad():
             for theta_val_batch, x_val_batch in val_loader:
-                with torch.no_grad():
-                    log_p_theta = prior.log_prob(theta_val_batch)
-                    log_q_theta = proposal.log_prob(theta_val_batch)
-                    log_weights = log_p_theta - log_q_theta
-                losses = density_estimator.loss(theta_val_batch, x_val_batch)
-                if round == 0:
-                    log_weights = torch.zeros_like(losses)
-                else:
-                    log_weights = log_weights / log_weights.sum() #normalize
-                val_loss = (losses - log_weights).mean()
-                epoch_val_loss += val_loss * theta_val_batch.size(0)
-        epoch_val_loss /= len(val_dataset)  # average over all validation points
+                batch_size = theta_val_batch.size(0)
+                num_atoms = min(10, batch_size)
+
+                probs = torch.ones(batch_size, batch_size, device=theta_val_batch.device) * (1 - torch.eye(batch_size, device=theta_val_batch.device)) / (batch_size - 1)
+                choices = torch.multinomial(probs, num_samples=num_atoms - 1, replacement=False)
+                contrastive_theta = theta_val_batch[choices]
+
+                atomic_theta = torch.cat((theta_val_batch[:, None, :], contrastive_theta), dim=1).reshape(batch_size * num_atoms, -1)
+                repeated_x = x_val_batch.repeat_interleave(num_atoms, dim=0)
+
+                log_prob_prior = prior.log_prob(atomic_theta).reshape(batch_size, num_atoms)
+                log_prob_post = density_estimator.log_prob(atomic_theta, repeated_x).reshape(batch_size, num_atoms)
+
+                unnormalized_log_prob = log_prob_post - log_prob_prior
+                log_prob_proposal_posterior = unnormalized_log_prob[:, 0] - torch.logsumexp(unnormalized_log_prob, dim=-1)
+                val_loss = -log_prob_proposal_posterior.mean()
+                epoch_val_loss += val_loss.item() * theta_val_batch.size(0)
+
+        epoch_val_loss /= len(val_dataset)
         wandb.log({"val_loss": epoch_val_loss, "epoch": epoch})
         scheduler.step(epoch_val_loss)
         if epoch_val_loss < best_validation_loss:
             best_validation_loss = epoch_val_loss
-            no_improvement_count = 0  # Reset counter if improvement is seen
+            no_improvement_count = 0
         else:
             no_improvement_count += 1
             if no_improvement_count >= patience:
                 print("Early stopping triggered.")
-                break  # Stop training if no improvement seen for 'patience' validations
+                break
 
     posterior = DirectPosterior(density_estimator, prior)
     posteriors.append(posterior)
