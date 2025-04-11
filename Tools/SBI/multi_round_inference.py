@@ -52,8 +52,8 @@ num_rounds = 4
 x_o = torch.zeros(
     3,
 )
-dummy_theta = torch.randn(2, 3)  # [batch=1, dim=3]
-dummy_x = torch.randn(2, 3)      # [batch=1, dim=3]
+dummy_theta = torch.randn(2, 3)  # [batch=2, dim=3]
+dummy_x = torch.randn(2, 3)      # [batch=2, dim=3]
 
 density_estimator = build_nsf(
         dummy_theta,
@@ -64,7 +64,7 @@ density_estimator = build_nsf(
 # Create a validation dataset
 posteriors = []
 proposal = prior
-num_epochs = 20
+num_epochs = 10
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -83,7 +83,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 best_validation_loss = float("inf")
 patience = 5
 
-for round_ in range(num_rounds):
+for round in range(num_rounds):
     theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
     train_loader = DataLoader(TensorDataset(theta, x), batch_size=batch_size, shuffle=True)
     val_theta, val_x = simulate_for_sbi(simulator, proposal, num_simulations=500)
@@ -136,6 +136,6 @@ for posterior in posteriors:
 
 # plot posterior samples
 fig, ax = pairplot(
-    [posterior_samples[0], posterior_samples[1], posterior_samples[2], posterior_samples[3]], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
+    posterior_samples[3], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
 )
 plt.show()
