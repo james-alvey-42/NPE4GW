@@ -98,15 +98,14 @@ for round in range(num_rounds):
         total_loss = 0.0
         with tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as pbar:
             for batch_theta, batch_x in pbar:
-                with torch.no_grad():
-                    log_p_theta = prior.log_prob(batch_theta)
-                    log_q_theta = proposal.log_prob(batch_theta)
-                    log_weights = log_p_theta - log_q_theta
                 losses = density_estimator.loss(batch_theta, batch_x)
                 if round == 0:
                     log_weights = torch.zeros_like(losses)
                 else:
-                    log_weights = log_weights / log_weights.sum() #normalize
+                    with torch.no_grad():
+                        log_p_theta = prior.log_prob(batch_theta)
+                        log_q_theta = proposal.log_prob(batch_theta)
+                        log_weights = log_p_theta - log_q_theta
                 loss = (losses - log_weights).mean()
                 optimizer.zero_grad()
                 loss.backward()
@@ -120,15 +119,14 @@ for round in range(num_rounds):
         epoch_val_loss = 0.0
         with torch.no_grad():
             for theta_val_batch, x_val_batch in val_loader:
-                with torch.no_grad():
-                    log_p_theta = prior.log_prob(theta_val_batch)
-                    log_q_theta = proposal.log_prob(theta_val_batch)
-                    log_weights = log_p_theta - log_q_theta
                 losses = density_estimator.loss(theta_val_batch, x_val_batch)
                 if round == 0:
                     log_weights = torch.zeros_like(losses)
                 else:
-                    log_weights = log_weights / log_weights.sum() #normalize
+                    with torch.no_grad():
+                        log_p_theta = prior.log_prob(theta_val_batch)
+                        log_q_theta = proposal.log_prob(theta_val_batch)
+                        log_weights = log_p_theta - log_q_theta
                 val_loss = (losses - log_weights).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  # average over all validation points

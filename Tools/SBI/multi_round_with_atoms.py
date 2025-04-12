@@ -109,6 +109,7 @@ for round in range(num_rounds):
 
                 atomic_theta = torch.cat((batch_theta[:, None, :], contrastive_theta), dim=1).reshape(batch_size * num_atoms, -1)
                 repeated_x = batch_x.repeat_interleave(num_atoms, dim=0)
+                atomic_theta = atomic_theta.unsqueeze(0)
 
                 log_prob_prior = prior.log_prob(atomic_theta).reshape(batch_size, num_atoms)
                 log_prob_post = density_estimator.log_prob(atomic_theta, repeated_x).reshape(batch_size, num_atoms)
@@ -138,6 +139,7 @@ for round in range(num_rounds):
 
                 atomic_theta = torch.cat((theta_val_batch[:, None, :], contrastive_theta), dim=1).reshape(batch_size * num_atoms, -1)
                 repeated_x = x_val_batch.repeat_interleave(num_atoms, dim=0)
+                atomic_theta = atomic_theta.unsqueeze(0)
 
                 log_prob_prior = prior.log_prob(atomic_theta).reshape(batch_size, num_atoms)
                 log_prob_post = density_estimator.log_prob(atomic_theta, repeated_x).reshape(batch_size, num_atoms)
