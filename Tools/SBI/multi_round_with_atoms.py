@@ -84,6 +84,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         min_lr=0,
         eps=1e-8,
     )
+epoch_val_loss = 0.0
 
 for round in range(num_rounds):
     theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
@@ -95,7 +96,7 @@ for round in range(num_rounds):
     no_improvement_count = 0
     patience = 4
 
-    optimizer = AdamW(density_estimator.parameters(), lr=1e-3)
+    optimizer = AdamW(density_estimator.parameters(), lr=1e-3)  
 
     for epoch in range(num_epochs):
         density_estimator.train()
@@ -129,25 +130,16 @@ for round in range(num_rounds):
                 x_pos = reshape_to_batch_event(batch_x, density_estimator.condition_shape)
                 log_prob_non_atomic = density_estimator.log_prob(theta_pos, x_pos).squeeze(0)
 
-                # Proposal correction for non-atomic log probs
-                if round == 0:
-                    log_weights_non_atomic = torch.zeros_like(log_prob_non_atomic)
-                else:
-                    with torch.no_grad():
-                        log_p_theta = prior.log_prob(batch_theta)
-                        log_q_theta = proposal.log_prob(batch_theta)
-                        log_weights_non_atomic = log_p_theta - log_q_theta
-
-                corrected_non_atomic = (log_prob_non_atomic + log_weights_non_atomic).mean()
-                loss = contrastive_loss - corrected_non_atomic  # Combined loss
+                corrected_non_atomic_loss = -(log_prob_non_atomic).mean()
+                loss = contrastive_loss + corrected_non_atomic_loss  # Combined loss
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
                 total_loss += loss.item()
-                wandb.log({"train_loss": loss.item(), "contrastive_loss": contrastive_loss.item(), "non_atomic_loss": -corrected_non_atomic.item()})
-                pbar.set_postfix({"Train Loss": f"{loss.item():.4f}"})
+                wandb.log({"train_loss": loss.item(), "contrastive_loss": contrastive_loss.item(), "non_atomic_loss": corrected_non_atomic_loss.item()})
+                pbar.set_postfix({"Train Loss": f"{loss.item():.4f}| Val Loss: {epoch_val_loss:.4f}"})
 
         # Validation loop
         density_estimator.eval()
@@ -179,17 +171,8 @@ for round in range(num_rounds):
                 x_pos = reshape_to_batch_event(x_val_batch, density_estimator.condition_shape)
                 log_prob_non_atomic = density_estimator.log_prob(theta_pos, x_pos).squeeze(0)
 
-                # Proposal correction for non-atomic log probs
-                if round == 0:
-                    log_weights_non_atomic = torch.zeros_like(log_prob_non_atomic)
-                else:
-                    with torch.no_grad():
-                        log_p_theta = prior.log_prob(theta_val_batch)
-                        log_q_theta = proposal.log_prob(theta_val_batch)
-                        log_weights_non_atomic = log_p_theta - log_q_theta
-
-                corrected_non_atomic = (log_prob_non_atomic + log_weights_non_atomic).mean()
-                val_loss = contrastive_loss - corrected_non_atomic  # Combined loss
+                corrected_non_atomic_loss = -(log_prob_non_atomic).mean()
+                val_loss = contrastive_loss + corrected_non_atomic_loss  # Combined loss
                 epoch_val_loss += val_loss.item() * theta_val_batch.size(0)
 
 
