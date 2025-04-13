@@ -200,6 +200,7 @@ for posterior in posteriors:
 
 # plot posterior samples
 fig, ax = pairplot(
-    [posterior_samples[i] for i in range(num_rounds)], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
+    posterior_samples[3], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
 )
+fig.suptitle("SNPE-C")
 plt.show()

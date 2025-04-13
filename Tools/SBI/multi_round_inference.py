@@ -64,7 +64,7 @@ density_estimator = build_nsf(
 # Create a validation dataset
 posteriors = []
 proposal = prior
-num_epochs = 5
+num_epochs = 10
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -106,7 +106,8 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                loss = (losses - log_weights).mean()
+                # loss = (losses - log_weights).mean()
+                loss = (torch.exp(log_weights) * losses).mean()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -127,7 +128,8 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                val_loss = (losses - log_weights).mean()
+                # val_loss = (losses - log_weights).mean()
+                val_loss = (torch.exp(log_weights) * losses).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  # average over all validation points
         wandb.log({"val_loss": epoch_val_loss, "epoch": epoch})
@@ -152,6 +154,7 @@ for posterior in posteriors:
 
 # plot posterior samples
 fig, ax = pairplot(
-    [posterior_samples[0], posterior_samples[1], posterior_samples[2], posterior_samples[3]], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
+    posterior_samples[3], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
 )
+fig.suptitle("SNPE-B - multiply weight to log prob")
 plt.show()
