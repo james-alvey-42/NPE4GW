@@ -64,7 +64,7 @@ density_estimator = build_nsf(
 # Create a validation dataset
 posteriors = []
 proposal = prior
-num_epochs = 10
+num_epochs = 5
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -101,7 +101,7 @@ for round in range(num_rounds):
                 losses = density_estimator.loss(batch_theta, batch_x)
                 if round == 0:
                     log_weights = torch.zeros_like(losses)
-                else:
+                else: 
                     with torch.no_grad():
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
