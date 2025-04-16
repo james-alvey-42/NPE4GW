@@ -99,7 +99,7 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 # Consistency check after making ready for sbi.
 check_sbi_inputs(simulator, prior)
 
-num_rounds = 1
+num_rounds = 4
 x_o = torch.zeros(
     3,
 )
@@ -115,7 +115,7 @@ density_estimator = build_nsf(
 # Create a validation dataset
 posteriors = []
 proposal = prior
-num_epochs = 60
+num_epochs = 2
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -209,16 +209,16 @@ for round in range(num_rounds):
                 break  # Stop training if no improvement seen for 'patience' validations
 
     posterior = DirectPosterior(density_estimator, prior)
-    posteriors.append(posterior)
-    # Find the 2.5 - 97.5% HPD region of the prior
-    samples = posterior.sample((10000,), x=x_o)
-    posterior_samples.append(samples)
-    hpd_intervals = [compute_hpd_interval(samples[:, i], alpha=0.05) for i in range(samples.shape[1])]
-    trunc_prior = TruncatedPrior(prior, hpd_intervals)
-    trunc_prior, num_parameters, prior_returns_numpy = process_prior(trunc_prior)
-    proposal = trunc_prior  
+    # posteriors.append(posterior)
+    # # Find the 2.5 - 97.5% HPD region of the prior
+    # samples = posterior.sample((10000,), x=x_o)
+    # posterior_samples.append(samples)
+    # hpd_intervals = [compute_hpd_interval(samples[:, i], alpha=0.05) for i in range(samples.shape[1])]
+    # trunc_prior = TruncatedPrior(prior, hpd_intervals)
+    # trunc_prior, num_parameters, prior_returns_numpy = process_prior(trunc_prior)
+    # proposal = trunc_prior  
 
-    # proposal = posterior.set_default_x(x_o) #Setting proposal to trained density estimator
+    proposal = posterior.set_default_x(x_o) #Setting proposal to trained density estimator
     
 # plot posterior samples
 true_mean = 1.0
