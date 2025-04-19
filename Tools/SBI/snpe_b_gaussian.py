@@ -197,7 +197,7 @@ for round in range(num_rounds):
                 val_loss = (torch.exp(log_weights) * losses).mean() #This is for multiplying weights
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  # average over all validation points
-        wandb.log({"val_loss": epoch_val_loss, "epoch": epoch})
+        wandb.log({f"val_loss_{round}": epoch_val_loss, "epoch": epoch})
         scheduler.step(epoch_val_loss)
         if epoch_val_loss < best_validation_loss:
             best_validation_loss = epoch_val_loss
