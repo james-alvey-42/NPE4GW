@@ -34,53 +34,47 @@ class BasicEmbeddingNet(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class TruncatedPrior(Distribution):
-    def __init__(self, base_prior, hpd_intervals):
-        """
-        base_prior: A torch.distributions.Distribution object.
-        hpd_intervals: List of (low, high) bounds for each dimension.
-        """
-        self.base_prior = base_prior
-        self.hpd_intervals = hpd_intervals
-        self._event_shape = base_prior.event_shape
-        self._batch_shape = torch.Size()
-        self.normalization_constant = self._estimate_normalization_constant()
-
-    def _in_hpd(self, theta):
-        mask = torch.ones(theta.shape[0], dtype=torch.bool, device=theta.device)
-        for dim, (low, high) in enumerate(self.hpd_intervals):
-            mask &= (theta[:, dim] >= low) & (theta[:, dim] <= high)
-        return mask
-
-    def _estimate_normalization_constant(self, num_samples=10_000):
-        samples = self.base_prior.sample((num_samples,))
-        mask = self._in_hpd(samples)
-        proportion_in_hpd = mask.float().mean()
-        return proportion_in_hpd.clamp(min=1e-8)  # prevent divide-by-zero
-
-    def log_prob(self, theta):
-        theta = theta.view(-1, theta.shape[-1])
-        base_log_prob = self.base_prior.log_prob(theta)
-        mask = self._in_hpd(theta)
-        log_norm = torch.log(self.normalization_constant)
-        return torch.where(mask, base_log_prob - log_norm, torch.full_like(base_log_prob, -torch.inf))
+class MixtureProposal(torch.distributions.Distribution):
+    def __init__(self, posterior, defensive, alpha):
+        super().__init__(validate_args=False)
+        self.posterior = posterior
+        self.defensive = defensive
+        self.alpha = alpha
 
     def sample(self, sample_shape=torch.Size()):
-        num_samples = int(torch.prod(torch.tensor(sample_shape)))
-        accepted = []
-        while len(accepted) < num_samples:
-            samples = self.base_prior.sample((num_samples,))
-            mask = self._in_hpd(samples)
-            accepted.extend(samples[mask])
-        return torch.stack(accepted[:num_samples])
+        # Flatten sample shape to get total number of samples
+        n_samples = int(torch.tensor(sample_shape).prod().item()) if len(sample_shape) > 0 else 1
 
-    @property
-    def event_shape(self):
-        return self._event_shape
+        mask = torch.rand(n_samples) < self.alpha
+        n_def = mask.sum().item()
+        n_post = n_samples - n_def
 
-    @property
-    def batch_shape(self):
-        return self._batch_shape
+        samples = []
+        if n_post > 0:
+            samples_post = self.posterior.sample((n_post,))
+            samples.append(samples_post)
+        if n_def > 0:
+            samples_def = self.defensive.sample((n_def,))
+            samples.append(samples_def)
+
+        all_samples = torch.cat(samples, dim=0)
+
+        # Shuffle to avoid ordering artifacts
+        indices = torch.randperm(n_samples)
+        mixed_samples = all_samples[indices]
+
+        # Reshape to match the requested sample shape
+        return mixed_samples.view(*sample_shape, -1)
+
+    def log_prob(self, x):
+        log_p = self.posterior.log_prob(x)
+        log_d = self.defensive.log_prob(x)
+        log_mix = torch.logaddexp(
+            torch.log(torch.tensor(1 - self.alpha)) + log_p,
+            torch.log(torch.tensor(self.alpha)) + log_d
+        )
+        return log_mix
+
 
 wandb.init(project="test_sequential_loops")  
 num_dim = 3
@@ -100,11 +94,9 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 check_sbi_inputs(simulator, prior)
 
 num_rounds = 4
-x_o = torch.zeros(
-    3,
-)
-dummy_theta = torch.randn(64, 3)  # [batch=2, dim=3]
-dummy_x = torch.randn(64, 3)      # [batch=2, dim=3]
+x_o = torch.Tensor([0.5, -0.5, 0])  
+dummy_theta = torch.randn(64, 3)  
+dummy_x = torch.randn(64, 3)      
 
 density_estimator = build_nsf(
         dummy_theta,
@@ -113,9 +105,8 @@ density_estimator = build_nsf(
     )
 
 # Create a validation dataset
-posteriors = []
 proposal = prior
-num_epochs = 2
+num_epochs = 10
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -133,18 +124,18 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     )
 posterior_samples =[]
 epoch_val_loss = 0.0
+tau = 0.1
 
-def compute_hpd_interval(samples, alpha=0.05):
-    sorted_samples = np.sort(samples)
-    n = len(samples)
-    interval_index = int(np.floor((1 - alpha) * n))
-    intervals = sorted_samples[interval_index:] - sorted_samples[:n - interval_index]
-
-    min_idx = np.argmin(intervals)
-    hpd_min = sorted_samples[min_idx]
-    hpd_max = sorted_samples[min_idx + interval_index]
-
-    return hpd_min, hpd_max
+def gaussian_kernel(x, x_o, tau):
+    """
+    x: Tensor of shape [batch_size, dim]
+    x_o: Tensor of shape [dim]
+    tau: float
+    Returns: Tensor of shape [batch_size]
+    """
+    diff = x - x_o  # [batch_size, dim]
+    dist_sq = torch.sum(diff ** 2, dim=1)  # [batch_size]
+    return ((2*torch.pi) ** (-3/2)) * (tau ** -3) *torch.exp(-dist_sq / (2 * tau ** 2))  # [batch_size]
 
 for round in range(num_rounds):
     theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
@@ -165,14 +156,16 @@ for round in range(num_rounds):
             for batch_theta, batch_x in pbar:
                 losses = density_estimator.loss(batch_theta, batch_x)
                 if round == 0:
-                    log_weights = torch.zeros_like(losses)
+                    weights = torch.ones_like(losses) 
                 else: 
                     with torch.no_grad():
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                # loss = (losses - log_weights).mean()
-                loss = (torch.exp(log_weights) * losses).mean() #This is for multiplying weights
+                        kernel_value = gaussian_kernel(batch_x, x_o, tau)
+                        # kernel_value = torch.ones_like(losses)
+                        weights = kernel_value * torch.exp(log_weights)  
+                loss = (weights * losses).mean() 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -180,62 +173,55 @@ for round in range(num_rounds):
                 wandb.log({"train_loss": loss.item()})
                 pbar.set_postfix({"Train Loss": f"{loss.item():.4f}| Val Loss: {epoch_val_loss:.4f}| Round: {round+1}"})
 
-        # Validation loop (still 50 samples, for speed)
         density_estimator.eval()
         epoch_val_loss = 0.0
         with torch.no_grad():
             for theta_val_batch, x_val_batch in val_loader:
                 losses = density_estimator.loss(theta_val_batch, x_val_batch)
                 if round == 0:
-                    log_weights = torch.zeros_like(losses)
+                    weights = torch.ones_like(losses)
                 else:
                     with torch.no_grad():
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                # val_loss = (losses - log_weights).mean()
-                val_loss = (torch.exp(log_weights) * losses).mean() #This is for multiplying weights
+                        kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
+                        # kernel_value = torch.ones_like(losses)
+                        weights = kernel_value * torch.exp(log_weights)  
+                val_loss = (weights * losses).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
-        epoch_val_loss /= len(val_dataset)  # average over all validation points
+        epoch_val_loss /= len(val_dataset)  
         wandb.log({f"val_loss_{round}": epoch_val_loss, "epoch": epoch})
         scheduler.step(epoch_val_loss)
         if epoch_val_loss < best_validation_loss:
             best_validation_loss = epoch_val_loss
-            no_improvement_count = 0  # Reset counter if improvement is seen
+            no_improvement_count = 0 
         else:
             no_improvement_count += 1
             if no_improvement_count >= patience:
                 print("Early stopping triggered.")
-                break  # Stop training if no improvement seen for 'patience' validations
+                break  
 
     posterior = DirectPosterior(density_estimator, prior)
-    # posteriors.append(posterior)
-    # # Find the 2.5 - 97.5% HPD region of the prior
-    # samples = posterior.sample((10000,), x=x_o)
-    # posterior_samples.append(samples)
-    # hpd_intervals = [compute_hpd_interval(samples[:, i], alpha=0.05) for i in range(samples.shape[1])]
-    # trunc_prior = TruncatedPrior(prior, hpd_intervals)
-    # trunc_prior, num_parameters, prior_returns_numpy = process_prior(trunc_prior)
-    # proposal = trunc_prior  
-
-    proposal = posterior.set_default_x(x_o) #Setting proposal to trained density estimator
+    samples = posterior.sample((10000,), x=x_o)
+    posterior_samples.append(samples)
+    posterior = posterior.set_default_x(x_o) #Setting proposal to trained density estimator
+    proposal = MixtureProposal(posterior, prior, alpha=0.2)
     
 # plot posterior samples
-true_mean = 1.0
+true_means = [1.5, 0.5, 1.0]
 true_std = 0.3
 
 fig, ax = pairplot(
-    posterior_samples[0], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
+    posterior_samples[-1], limits=[[-1, 3], [-2, 2], [-2, 2]], figsize=(5, 5)
 )
-fig.suptitle("NPE")
+fig.suptitle("SNPE with calibration kernel")
 
 for i in range(num_dim):
     diag_ax = ax[i, i]
-    # Get current x-axis limits
     xmin, xmax = diag_ax.get_xlim()
     x_vals = np.linspace(xmin, xmax, 500)
-    true_pdf = norm.pdf(x_vals, loc=true_mean, scale=true_std)
-    # Rescale for visual alignment with histogram
+    true_pdf = norm.pdf(x_vals, loc=true_means[i], scale=true_std)
     true_pdf_scaled = true_pdf / np.max(true_pdf) * np.max(diag_ax.get_ylim())
     diag_ax.plot(x_vals, true_pdf_scaled, color='red', linestyle='--', label='True PDF')
 
