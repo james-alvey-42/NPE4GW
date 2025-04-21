@@ -80,9 +80,10 @@ wandb.init(project="test_sequential_loops")
 num_dim = 3
 
 prior = BoxUniform(low=-3 * torch.ones(num_dim), high=3 * torch.ones(num_dim))
+stddev = torch.Tensor([0.1, 0.2, 0.3])
 
 def linear_gaussian(theta):
-    return theta - 1.0 + torch.randn_like(theta) * 0.3
+    return theta - 1.0 + torch.randn_like(theta) * stddev
 
 # Check prior, return PyTorch prior.
 prior, num_parameters, prior_returns_numpy = process_prior(prior)
@@ -243,7 +244,7 @@ for round in range(num_rounds):
     
 # plot posterior samples
 true_means = [1.5, 0.5, 1.0]
-true_std = 0.3
+true_stds = [0.1, 0.2, 0.3]
 
 fig, ax = pairplot(
     posterior_samples[-1], limits=[[-1, 3], [-2, 2], [-2, 2]], figsize=(5, 5)
@@ -254,7 +255,7 @@ for i in range(num_dim):
     diag_ax = ax[i, i]
     xmin, xmax = diag_ax.get_xlim()
     x_vals = np.linspace(xmin, xmax, 500)
-    true_pdf = norm.pdf(x_vals, loc=true_means[i], scale=true_std)
+    true_pdf = norm.pdf(x_vals, loc=true_means[i], scale=true_stds[i])
     true_pdf_scaled = true_pdf / np.max(true_pdf) * np.max(diag_ax.get_ylim())
     diag_ax.plot(x_vals, true_pdf_scaled, color='red', linestyle='--', label='True PDF')
 
