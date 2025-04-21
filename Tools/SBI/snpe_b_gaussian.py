@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from matplotlib import pyplot as plt
 from scipy.stats import norm
 import numpy as np
-from torch.distributions import Distribution
+from scipy.optimize import root_scalar
 
 class BasicEmbeddingNet(nn.Module):
     def __init__(self, input_dim: int = 3, hidden_dim: int = 3, output_dim: int = 3):
@@ -79,7 +79,7 @@ class MixtureProposal(torch.distributions.Distribution):
 wandb.init(project="test_sequential_loops")  
 num_dim = 3
 
-prior = BoxUniform(low=-2 * torch.ones(num_dim), high=2 * torch.ones(num_dim))
+prior = BoxUniform(low=-3 * torch.ones(num_dim), high=3 * torch.ones(num_dim))
 
 def linear_gaussian(theta):
     return theta - 1.0 + torch.randn_like(theta) * 0.3
@@ -106,7 +106,7 @@ density_estimator = build_nsf(
 
 # Create a validation dataset
 proposal = prior
-num_epochs = 10
+num_epochs = 30
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -137,6 +137,7 @@ def gaussian_kernel(x, x_o, tau):
     dist_sq = torch.sum(diff ** 2, dim=1)  # [batch_size]
     return ((2*torch.pi) ** (-3/2)) * (tau ** -3) *torch.exp(-dist_sq / (2 * tau ** 2))  # [batch_size]
 
+
 for round in range(num_rounds):
     theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
     train_loader = DataLoader(TensorDataset(theta, x), batch_size=batch_size, shuffle=True)
@@ -145,7 +146,37 @@ for round in range(num_rounds):
     val_loader = DataLoader(TensorDataset(val_theta, val_x), batch_size=batch_size, shuffle=False)
     best_validation_loss = float("inf")
     no_improvement_count = 0
-    patience = 8
+    patience = 12
+
+    if round != 0:
+        gamma = 0.01
+        def ess_given_tau(tau_value):
+            tau_tensor = torch.tensor(tau_value, device=x_o.device, dtype=torch.float32)
+            
+            weights = torch.tensor(0.0, device=x_o.device)
+            weights_squared = torch.tensor(0.0, device=x_o.device)
+
+            for batch_theta, batch_x in train_loader:
+                log_p_theta = prior.log_prob(batch_theta)
+                log_q_theta = proposal.log_prob(batch_theta)
+                log_weights = log_p_theta - log_q_theta
+
+                kernel_value = gaussian_kernel(batch_x, x_o, tau_tensor)
+                importance_weights = kernel_value * torch.exp(log_weights)
+
+                weights += importance_weights.sum()
+                weights_squared += (importance_weights ** 2).sum()
+
+            ess = (weights ** 2 / weights_squared).item()
+            return ess - gamma*5000
+        
+        sol = root_scalar(ess_given_tau, bracket=[0.01, 0.5], method='bisect')
+        if sol.converged:
+            print(f"Found τ: {sol.root:.4f}")
+            tau = sol.root
+        else:
+            print("Root-finding did not converge, using τ:0.5.")  
+            tau = 0.5
 
     optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
 
@@ -154,9 +185,10 @@ for round in range(num_rounds):
         total_loss = 0.0
         with tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as pbar:
             for batch_theta, batch_x in pbar:
-                losses = density_estimator.loss(batch_theta, batch_x)
+                losses = density_estimator.loss(batch_theta, batch_x) 
                 if round == 0:
-                    weights = torch.ones_like(losses) 
+                    log_weights = torch.zeros_like(losses)
+                    weights = torch.exp(log_weights)  
                 else: 
                     with torch.no_grad():
                         log_p_theta = prior.log_prob(batch_theta)
@@ -179,7 +211,8 @@ for round in range(num_rounds):
             for theta_val_batch, x_val_batch in val_loader:
                 losses = density_estimator.loss(theta_val_batch, x_val_batch)
                 if round == 0:
-                    weights = torch.ones_like(losses)
+                    log_weights = torch.zeros_like(losses)
+                    weights = torch.exp(log_weights)  
                 else:
                     with torch.no_grad():
                         log_p_theta = prior.log_prob(theta_val_batch)
@@ -215,7 +248,7 @@ true_std = 0.3
 fig, ax = pairplot(
     posterior_samples[-1], limits=[[-1, 3], [-2, 2], [-2, 2]], figsize=(5, 5)
 )
-fig.suptitle("SNPE with calibration kernel")
+fig.suptitle("SNPE with Adaptive Calibration Kernels")
 
 for i in range(num_dim):
     diag_ax = ax[i, i]
