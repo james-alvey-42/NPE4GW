@@ -94,7 +94,7 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 # Consistency check after making ready for sbi.
 check_sbi_inputs(simulator, prior)
 
-num_rounds = 4
+num_rounds = 3
 x_o = torch.Tensor([0.5, -0.5, 0])  
 dummy_theta = torch.randn(64, 3)  
 dummy_x = torch.randn(64, 3)      
@@ -107,7 +107,7 @@ density_estimator = build_nsf(
 
 # Create a validation dataset
 proposal = prior
-num_epochs = 30
+num_epochs = 20
 
 batch_size = 64
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
@@ -136,7 +136,24 @@ def gaussian_kernel(x, x_o, tau):
     """
     diff = x - x_o  # [batch_size, dim]
     dist_sq = torch.sum(diff ** 2, dim=1)  # [batch_size]
-    return ((2*torch.pi) ** (-3/2)) * (tau ** -3) *torch.exp(-dist_sq / (2 * tau ** 2))  # [batch_size]
+    return ((2*torch.pi) ** (-3/2)) * (tau ** -3) * torch.exp(-dist_sq / (2 * tau ** 2))  # [batch_size]
+
+def mahalanobis_kernel(x, x_o, tau):
+    """
+    x: [batch_size, d]
+    x_o: [d]
+    tau: scalar
+    """
+    _, d = x.shape
+    diff = x - x_o  
+    cov = torch.from_numpy(np.cov(x.T.detach().cpu().numpy())).to(dtype=x.dtype, device=x.device)
+    inv_cov = torch.linalg.inv(cov)  # [d, d]
+    det_cov = torch.linalg.det(cov)
+    # Mahalanobis distance squared: xᵢᵀ Σ⁻¹ xᵢ
+    dist_sq = torch.einsum('bi,ij,bj->b', diff, inv_cov, diff)  # [batch_size]
+    norm_const = ((2 * torch.pi) ** (-d / 2)) * (det_cov ** -0.5) * (tau ** -d)
+    kernel_vals = norm_const * torch.exp(-dist_sq / (2 * tau**2))
+    return kernel_vals  # [batch_size]
 
 
 for round in range(num_rounds):
@@ -162,7 +179,7 @@ for round in range(num_rounds):
                 log_q_theta = proposal.log_prob(batch_theta)
                 log_weights = log_p_theta - log_q_theta
 
-                kernel_value = gaussian_kernel(batch_x, x_o, tau_tensor)
+                kernel_value = mahalanobis_kernel(batch_x, x_o, tau_tensor)
                 importance_weights = kernel_value * torch.exp(log_weights)
 
                 weights += importance_weights.sum()
@@ -171,7 +188,7 @@ for round in range(num_rounds):
             ess = (weights ** 2 / weights_squared).item()
             return ess - gamma*5000
         
-        sol = root_scalar(ess_given_tau, bracket=[0.01, 0.5], method='bisect')
+        sol = root_scalar(ess_given_tau, bracket=[0.01, 1.5], method='bisect')
         if sol.converged:
             print(f"Found τ: {sol.root:.4f}")
             tau = sol.root
@@ -180,7 +197,8 @@ for round in range(num_rounds):
             tau = 0.5
 
     optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
-
+    overall_weights = []
+    overall_theta = []
     for epoch in range(num_epochs):
         density_estimator.train()
         total_loss = 0.0
@@ -195,9 +213,11 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = gaussian_kernel(batch_x, x_o, tau)
+                        kernel_value = mahalanobis_kernel(batch_x, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
-                        weights = kernel_value * torch.exp(log_weights)  
+                        weights = kernel_value * torch.exp(log_weights)
+                overall_weights.append(weights)
+                overall_theta.append(batch_theta)
                 loss = (weights * losses).mean() 
                 optimizer.zero_grad()
                 loss.backward()
@@ -219,13 +239,13 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
+                        kernel_value = mahalanobis_kernel(x_val_batch, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
                         weights = kernel_value * torch.exp(log_weights)  
                 val_loss = (weights * losses).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  
-        wandb.log({f"val_loss_{round}": epoch_val_loss, "epoch": epoch})
+        wandb.log({f"val_loss_round_{round+1}": epoch_val_loss, "epoch": epoch})
         scheduler.step(epoch_val_loss)
         if epoch_val_loss < best_validation_loss:
             best_validation_loss = epoch_val_loss
@@ -235,19 +255,53 @@ for round in range(num_rounds):
             if no_improvement_count >= patience:
                 print("Early stopping triggered.")
                 break  
+    
+    # plot histogram of weights
+    all_weights = torch.cat(overall_weights)
+    all_theta = torch.cat(overall_theta)
+    all_weights = all_weights.cpu().numpy()
+    all_theta = all_theta.cpu().numpy()
+    plt.figure(figsize=(10, 5))
+    plt.hist(all_weights, bins=50, density=True)
+    plt.yscale("log")
+    plt.xlabel("Weights")
+    plt.ylabel("Log Density")
+    plt.title(f"Histogram of Weights after Round {round+1} with Calibration Kernel")
+    plt.xlim(0, max(all_weights)+0.1)
+    plt.show()
 
+    # find the index of the maximum weight
+    max_weight_index = np.argmax(all_weights)
+    min_weight_index = np.argmin(all_weights)
+    # get the corresponding theta
+    max_theta = all_theta[max_weight_index]
+    min_theta = all_theta[min_weight_index]
     posterior = DirectPosterior(density_estimator, prior)
     samples = posterior.sample((10000,), x=x_o)
     posterior_samples.append(samples)
-    posterior = posterior.set_default_x(x_o) #Setting proposal to trained density estimator
+    posterior = posterior.set_default_x(x_o) 
     proposal = MixtureProposal(posterior, prior, alpha=0.2)
+    # proposal = posterior
+    proposal_samples = proposal.sample(torch.Size((10000,)))
+    plt.figure(figsize=(10, 5))
+    plt.suptitle(f"Histogram of Thetas used in Round {round+1} without Calibration Kernel")
+    for idx in range(num_dim):
+        ax = plt.subplot(3, 1, idx + 1)
+        ax.hist(all_theta[:, idx], bins=50, density=True)
+        ax.set_ylabel("Density")
+        ax.axvline(x=max_theta[idx], color='r', linestyle='--', label='Max Weight Theta')
+        ax.axvline(x=min_theta[idx], color='g', linestyle='--', label='Min Weight Theta')
+        ax.set_title(f"Theta {idx+1}")
+        ax.legend()
+    plt.tight_layout()
+    plt.show()
     
 # plot posterior samples
 true_means = [1.5, 0.5, 1.0]
 true_stds = [0.1, 0.2, 0.3]
 
 fig, ax = pairplot(
-    posterior_samples[-1], limits=[[-1, 3], [-2, 2], [-2, 2]], figsize=(5, 5)
+    posterior_samples[-1], limits=[[-3, 3], [-3, 3], [-3, 3]], figsize=(5, 5)
 )
 fig.suptitle("SNPE with Adaptive Calibration Kernels")
 
