@@ -20,6 +20,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import norm
 import numpy as np
 from scipy.optimize import root_scalar
+import corner
 
 class BasicEmbeddingNet(nn.Module):
     def __init__(self, input_dim: int = 3, hidden_dim: int = 3, output_dim: int = 3):
@@ -179,7 +180,7 @@ for round in range(num_rounds):
                 log_q_theta = proposal.log_prob(batch_theta)
                 log_weights = log_p_theta - log_q_theta
 
-                kernel_value = mahalanobis_kernel(batch_x, x_o, tau_tensor)
+                kernel_value = gaussian_kernel(batch_x, x_o, tau_tensor)
                 importance_weights = kernel_value * torch.exp(log_weights)
 
                 weights += importance_weights.sum()
@@ -213,7 +214,7 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = mahalanobis_kernel(batch_x, x_o, tau)
+                        kernel_value = gaussian_kernel(batch_x, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
                         weights = kernel_value * torch.exp(log_weights)
                 overall_weights.append(weights)
@@ -239,7 +240,7 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = mahalanobis_kernel(x_val_batch, x_o, tau)
+                        kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
                         weights = kernel_value * torch.exp(log_weights)  
                 val_loss = (weights * losses).mean()
@@ -283,19 +284,36 @@ for round in range(num_rounds):
     proposal = MixtureProposal(posterior, prior, alpha=0.2)
     # proposal = posterior
     proposal_samples = proposal.sample(torch.Size((10000,)))
-    plt.figure(figsize=(10, 5))
-    plt.suptitle(f"Histogram of Thetas used in Round {round+1} without Calibration Kernel")
-    for idx in range(num_dim):
-        ax = plt.subplot(3, 1, idx + 1)
-        ax.hist(all_theta[:, idx], bins=50, density=True)
-        ax.set_ylabel("Density")
-        ax.axvline(x=max_theta[idx], color='r', linestyle='--', label='Max Weight Theta')
-        ax.axvline(x=min_theta[idx], color='g', linestyle='--', label='Min Weight Theta')
-        ax.set_title(f"Theta {idx+1}")
-        ax.legend()
-    plt.tight_layout()
+    fig = plt.figure(figsize=(10, 5))
+    # plt.suptitle(f"Histogram of Thetas used in Round {round+1} without Calibration Kernel")
+    # for idx in range(num_dim):
+    #     ax = plt.subplot(3, 1, idx + 1)
+    #     ax.hist(all_theta[:, idx], bins=50, density=True)
+    #     ax.set_ylabel("Density")
+    #     ax.axvline(x=max_theta[idx], color='r', linestyle='--', label='Max Weight Theta')
+    #     ax.axvline(x=min_theta[idx], color='g', linestyle='--', label='Min Weight Theta')
+    #     ax.set_title(f"Theta {idx+1}")
+    #     ax.legend()
+    # plt.tight_layout()
+    # plt.show()
+    fig = corner.corner(
+        all_theta,
+        labels=[f"Theta {i+1}" for i in range(num_dim)],
+        show_titles=False,
+        title_kwargs={"fontsize": 8},
+        fill_contours=True,
+        levels=[0.68, 0.95],
+    )
+    fig.suptitle(f"Corner Plot of Thetas used in Round {round+1} with Calibration Kernel", fontsize=16)
+    axes = np.array(fig.axes).reshape((num_dim, num_dim))
+    #plot the maximum weight theta as a scatter point
+    for i in range(num_dim):
+        for j in range(i):
+            ax = axes[i, j]
+            ax.scatter(max_theta[j], max_theta[i], color='red', marker='x', label='Max Weight' if i == 1 and j == 0 else "")
+            ax.scatter(min_theta[j], min_theta[i], color='blue', marker='o', label='Min Weight' if i == 1 and j == 0 else "")
+    axes[1, 0].legend()
     plt.show()
-    
 # plot posterior samples
 true_means = [1.5, 0.5, 1.0]
 true_stds = [0.1, 0.2, 0.3]
