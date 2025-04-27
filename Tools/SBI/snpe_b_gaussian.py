@@ -95,7 +95,7 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 # Consistency check after making ready for sbi.
 check_sbi_inputs(simulator, prior)
 
-num_rounds = 3
+num_rounds = 4
 x_o = torch.Tensor([0.5, -0.5, 0])  
 dummy_theta = torch.randn(64, 3)  
 dummy_x = torch.randn(64, 3)      
@@ -108,22 +108,10 @@ density_estimator = build_nsf(
 
 # Create a validation dataset
 proposal = prior
-num_epochs = 20
+num_epochs = 25
 
 batch_size = 64
-optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=0.1,
-        patience=4,
-        verbose=True,
-        threshold=1e-4,
-        threshold_mode="rel",
-        cooldown=0,
-        min_lr=0,
-        eps=1e-8,
-    )
+
 posterior_samples =[]
 epoch_val_loss = 0.0
 tau = 0.1
@@ -156,9 +144,27 @@ def mahalanobis_kernel(x, x_o, tau):
     kernel_vals = norm_const * torch.exp(-dist_sq / (2 * tau**2))
     return kernel_vals  # [batch_size]
 
+density_estimator = build_nsf(
+    dummy_theta,
+    dummy_x,
+    embedding_net=BasicEmbeddingNet(),
+)
+optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.1,
+        patience=4,
+        verbose=True,
+        threshold=1e-4,
+        threshold_mode="rel",
+        cooldown=0,
+        min_lr=0,
+        eps=1e-8,
+    )
 
 for round in range(num_rounds):
-    theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
+    theta, x = simulate_for_sbi(simulator, proposal, num_simulations=10000)
     train_loader = DataLoader(TensorDataset(theta, x), batch_size=batch_size, shuffle=True)
     val_theta, val_x = simulate_for_sbi(simulator, proposal, num_simulations=500)
     val_dataset = TensorDataset(val_theta, val_x)
@@ -167,35 +173,39 @@ for round in range(num_rounds):
     no_improvement_count = 0
     patience = 12
 
-    if round != 0:
-        gamma = 0.01
-        def ess_given_tau(tau_value):
-            tau_tensor = torch.tensor(tau_value, device=x_o.device, dtype=torch.float32)
-            
-            weights = torch.tensor(0.0, device=x_o.device)
-            weights_squared = torch.tensor(0.0, device=x_o.device)
+    # if round != 0:
+    #     gamma = 0.01
+    #     def ess_given_tau(tau_value):
+    #         tau_tensor = torch.tensor(tau_value, device=x_o.device, dtype=torch.float32)
 
-            for batch_theta, batch_x in train_loader:
-                log_p_theta = prior.log_prob(batch_theta)
-                log_q_theta = proposal.log_prob(batch_theta)
-                log_weights = log_p_theta - log_q_theta
+    #         weight_sum = 0.0
+    #         weight_squared_sum = 0.0
 
-                kernel_value = gaussian_kernel(batch_x, x_o, tau_tensor)
-                importance_weights = kernel_value * torch.exp(log_weights)
+    #         for batch_theta, batch_x in train_loader:
+    #             batch_theta = batch_theta.to(x_o.device)
+    #             batch_x = batch_x.to(x_o.device)
 
-                weights += importance_weights.sum()
-                weights_squared += (importance_weights ** 2).sum()
+    #             with torch.no_grad():
+    #                 log_p_theta = prior.log_prob(batch_theta)
+    #                 log_q_theta = proposal.log_prob(batch_theta)
+    #                 log_weights = log_p_theta - log_q_theta
+    #                 w = torch.exp(log_weights)
 
-            ess = (weights ** 2 / weights_squared).item()
-            return ess - gamma*5000
-        
-        sol = root_scalar(ess_given_tau, bracket=[0.01, 1.5], method='bisect')
-        if sol.converged:
-            print(f"Found τ: {sol.root:.4f}")
-            tau = sol.root
-        else:
-            print("Root-finding did not converge, using τ:0.5.")  
-            tau = 0.5
+    #                 kernel_vals = gaussian_kernel(batch_x, x_o, tau_tensor)
+    #                 importance_weights = kernel_vals * w
+
+    #                 weight_sum += importance_weights.sum().item()
+    #                 weight_squared_sum += (importance_weights ** 2).sum().item()
+
+    #         ess = (weight_sum ** 2) / weight_squared_sum
+    #         return ess - gamma * 5000
+    #     sol = root_scalar(ess_given_tau, bracket=[0.5, 1.5], method='bisect')
+    #     if sol.converged:
+    #         print(f"Found τ: {sol.root:.4f}")
+    #         tau = sol.root
+    #     else:
+    #         print("Root-finding did not converge, using τ:0.5.")  
+    #         tau = 0.5
 
     optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
     overall_weights = []
@@ -214,9 +224,11 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = gaussian_kernel(batch_x, x_o, tau)
+                        # kernel_value = gaussian_kernel(batch_x, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
-                        weights = kernel_value * torch.exp(log_weights)
+                        weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
+                        weights = weights / weights.sum() 
+                        # weights = kernel_value * torch.exp(log_weights)  
                 overall_weights.append(weights)
                 overall_theta.append(batch_theta)
                 loss = (weights * losses).mean() 
@@ -240,9 +252,11 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                        kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
+                        # kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
-                        weights = kernel_value * torch.exp(log_weights)  
+                        weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
+                        weights = weights / weights.sum()
+                        # weights = kernel_value * torch.exp(log_weights) 
                 val_loss = (weights * losses).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  
@@ -281,8 +295,8 @@ for round in range(num_rounds):
     samples = posterior.sample((10000,), x=x_o)
     posterior_samples.append(samples)
     posterior = posterior.set_default_x(x_o) 
-    proposal = MixtureProposal(posterior, prior, alpha=0.2)
-    # proposal = posterior
+    # proposal = MixtureProposal(posterior, prior, alpha=0.2)
+    proposal = posterior
     proposal_samples = proposal.sample(torch.Size((10000,)))
     fig = plt.figure(figsize=(10, 5))
     # plt.suptitle(f"Histogram of Thetas used in Round {round+1} without Calibration Kernel")
@@ -321,7 +335,7 @@ true_stds = [0.1, 0.2, 0.3]
 fig, ax = pairplot(
     posterior_samples[-1], limits=[[-3, 3], [-3, 3], [-3, 3]], figsize=(5, 5)
 )
-fig.suptitle("SNPE with Adaptive Calibration Kernels")
+fig.suptitle("SNPE with Normalized Weights")
 
 for i in range(num_dim):
     diag_ax = ax[i, i]
