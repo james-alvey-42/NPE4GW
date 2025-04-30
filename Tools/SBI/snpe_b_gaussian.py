@@ -108,7 +108,7 @@ density_estimator = build_nsf(
 
 # Create a validation dataset
 proposal = prior
-num_epochs = 25
+num_epochs = 15
 
 batch_size = 64
 
@@ -150,21 +150,9 @@ density_estimator = build_nsf(
     embedding_net=BasicEmbeddingNet(),
 )
 optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=0.1,
-        patience=4,
-        verbose=True,
-        threshold=1e-4,
-        threshold_mode="rel",
-        cooldown=0,
-        min_lr=0,
-        eps=1e-8,
-    )
 
 for round in range(num_rounds):
-    theta, x = simulate_for_sbi(simulator, proposal, num_simulations=10000)
+    theta, x = simulate_for_sbi(simulator, proposal, num_simulations=5000)
     train_loader = DataLoader(TensorDataset(theta, x), batch_size=batch_size, shuffle=True)
     val_theta, val_x = simulate_for_sbi(simulator, proposal, num_simulations=500)
     val_dataset = TensorDataset(val_theta, val_x)
@@ -208,6 +196,19 @@ for round in range(num_rounds):
     #         tau = 0.5
 
     optimizer = AdamW(density_estimator.parameters(), lr=1e-3) # initialise pytorch optimiser
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.1,
+        patience=4,
+        verbose=True,
+        threshold=1e-4,
+        threshold_mode="rel",
+        cooldown=0,
+        min_lr=0,
+        eps=1e-8,
+    )
+
     overall_weights = []
     overall_theta = []
     for epoch in range(num_epochs):
