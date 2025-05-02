@@ -81,7 +81,7 @@ wandb.init(project="test_sequential_loops")
 num_dim = 3
 
 prior = BoxUniform(low=-3 * torch.ones(num_dim), high=3 * torch.ones(num_dim))
-stddev = torch.Tensor([0.1, 0.2, 0.3])
+stddev = torch.Tensor([0.1, 0.1, 0.1])
 
 def linear_gaussian(theta):
     return theta - 1.0 + torch.randn_like(theta) * stddev
@@ -96,7 +96,7 @@ simulator = process_simulator(linear_gaussian, prior, prior_returns_numpy)
 check_sbi_inputs(simulator, prior)
 
 num_rounds = 4
-x_o = torch.Tensor([0.5, -0.5, 0])  
+x_o = torch.Tensor([0, 0, 0])  
 dummy_theta = torch.randn(64, 3)  
 dummy_x = torch.randn(64, 3)      
 
@@ -108,7 +108,7 @@ density_estimator = build_nsf(
 
 # Create a validation dataset
 proposal = prior
-num_epochs = 15
+num_epochs = 20
 
 batch_size = 64
 
@@ -225,11 +225,11 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(batch_theta)
                         log_q_theta = proposal.log_prob(batch_theta)
                         log_weights = log_p_theta - log_q_theta
-                        # kernel_value = gaussian_kernel(batch_x, x_o, tau)
+                        kernel_value = gaussian_kernel(batch_x, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
-                        weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
-                        weights = weights / weights.sum() 
-                        # weights = kernel_value * torch.exp(log_weights)  
+                        # weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
+                        # weights = weights / weights.sum() 
+                        weights = kernel_value * torch.exp(log_weights)  
                 overall_weights.append(weights)
                 overall_theta.append(batch_theta)
                 loss = (weights * losses).mean() 
@@ -253,11 +253,11 @@ for round in range(num_rounds):
                         log_p_theta = prior.log_prob(theta_val_batch)
                         log_q_theta = proposal.log_prob(theta_val_batch)
                         log_weights = log_p_theta - log_q_theta
-                        # kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
+                        kernel_value = gaussian_kernel(x_val_batch, x_o, tau)
                         # kernel_value = torch.ones_like(losses)
-                        weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
-                        weights = weights / weights.sum()
-                        # weights = kernel_value * torch.exp(log_weights) 
+                        # weights = torch.exp(log_weights - torch.logsumexp(log_weights, dim=0))
+                        # weights = weights / weights.sum()
+                        weights = kernel_value * torch.exp(log_weights) 
                 val_loss = (weights * losses).mean()
                 epoch_val_loss += val_loss * theta_val_batch.size(0)
         epoch_val_loss /= len(val_dataset)  
@@ -329,22 +329,25 @@ for round in range(num_rounds):
             ax.scatter(min_theta[j], min_theta[i], color='blue', marker='o', label='Min Weight' if i == 1 and j == 0 else "")
     axes[1, 0].legend()
     plt.show()
-# plot posterior samples
-true_means = [1.5, 0.5, 1.0]
-true_stds = [0.1, 0.2, 0.3]
 
-fig, ax = pairplot(
-    posterior_samples[-1], limits=[[-3, 3], [-3, 3], [-3, 3]], figsize=(5, 5)
-)
-fig.suptitle("SNPE with Normalized Weights")
+    true_means = [1.0, 1.0, 1.0]
+    true_stds = [0.1, 0.1, 0.1]
 
-for i in range(num_dim):
-    diag_ax = ax[i, i]
-    xmin, xmax = diag_ax.get_xlim()
-    x_vals = np.linspace(xmin, xmax, 500)
-    true_pdf = norm.pdf(x_vals, loc=true_means[i], scale=true_stds[i])
-    true_pdf_scaled = true_pdf / np.max(true_pdf) * np.max(diag_ax.get_ylim())
-    diag_ax.plot(x_vals, true_pdf_scaled, color='red', linestyle='--', label='True PDF')
+    fig, ax = pairplot(
+        posterior_samples[-1], limits=[[-2, 2], [-2, 2], [-2, 2]], figsize=(5, 5)
+    )
+    fig.suptitle(f"Round {round+1} Posteriors", fontsize=13)
 
-fig.legend(loc="lower left")
-plt.show()
+    for i in range(num_dim):
+        diag_ax = ax[i, i]
+        xmin, xmax = diag_ax.get_xlim()
+        x_vals = np.linspace(xmin, xmax, 500)
+        true_pdf = norm.pdf(x_vals, loc=true_means[i], scale=true_stds[i])
+        true_pdf_scaled = true_pdf / np.max(true_pdf) * np.max(diag_ax.get_ylim())
+        diag_ax.plot(x_vals, true_pdf_scaled, color='red', linestyle='--', label='True Posterior')
+        if i==0:
+            fig.legend(loc="lower left")
+
+    plt.show()
+    # plot posterior samples
+
